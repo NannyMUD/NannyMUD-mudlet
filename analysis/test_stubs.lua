@@ -6,7 +6,7 @@
 -- nothing ever retracting one. A fully explored room in a dense area therefore
 -- carried a stub AND an edge in every direction -- geometry proportional to how
 -- interconnected the area is, redrawn by Mudlet whether or not you move.
---   cd .../map_helper/client && luajit analysis/test_stubs.lua
+--   cd .../nmp/client && luajit analysis/test_stubs.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0
@@ -202,15 +202,19 @@ elro.exitStubs = true
 
 print("an exit that leaves the map (!NMP id=0) is not a stub")
 fresh()
-local LINES = {}
-_G.addCustomLine = function(id, pts, d, style, col) LINES[id .. ":" .. d] = col or true end
-_G.removeCustomLine = function(id, d) LINES[id .. ":" .. d] = nil end
+local LINES, PTS = {}, {}
+_G.addCustomLine = function(id, pts, d, style, col)
+  LINES[id .. ":" .. d] = col or true ; PTS[id .. ":" .. d] = pts
+end
+-- As Mudlet does: lines are handed back keyed by the SHORT direction ("nw"), and either
+-- form is accepted for removal. A mock keyed by the long name hid a live bug for a day.
+_G.removeCustomLine = function(id, d) LINES[id .. ":" .. elro.norm(d)] = nil end
 _G.getCustomLines = function(id)
   local t = {}
   for k, col in pairs(LINES) do
     local rid, d = k:match("^(%d+):(.+)$")
     if tonumber(rid) == id and type(col) == "table" then
-      t[d] = { attributes = { color = { r = col[1], g = col[2], b = col[3] } } }
+      t[elro.shortDir(d)] = { attributes = { color = { r = col[1], g = col[2], b = col[3] } } }
     end
   end
   return t
@@ -311,6 +315,10 @@ ok(ex.north == elro.FRONTIER_ROOM and ex.south == elro.FRONTIER_ROOM and ex.east
 ok(roomExists(elro.FRONTIER_ROOM) and getRoomArea(elro.FRONTIER_ROOM) ~= aid
    and elro.FRONTIER_ROOM ~= elro.OFF_ROOM, "...a room of its own on its own canvas")
 ok(LINES["1:north"] and LINES["1:south"] and LINES["1:east"], "...each drawn as a custom half-line")
+local p = PTS["1:east"]
+local reach = p and (p[2][1] - p[1][1])
+ok(reach and reach > 0 and reach < 0.5,
+   "...stopping short of the midpoint, so two facing stubs leave a gap")
 ok(elro.stub_halo_set() == nil, "no halo in edges mode")
 -- a real edge takes the direction over
 elro.onRoom(2, 1, "north", "Yard", "t", "south", "outdoors")
@@ -318,6 +326,7 @@ ex = getRoomExits(1)
 ok(ex.north == 2, "walking north replaces the frontier link with the real edge")
 ok(LINES["1:north"] == nil, "...and its half-line is removed")
 ok(ex.south == elro.FRONTIER_ROOM and ex.east == elro.FRONTIER_ROOM, "...the others stay")
+ok(LINES["1:east"] == elro.FRONTIER_COL, "a stub is drawn in the frontier colour, not the corridor grey")
 -- an off-map mark is the OTHER placeholder, and both survive side by side
 elro.onOff(1, "east")
 ex = getRoomExits(1)
@@ -333,6 +342,30 @@ ok(getRoomExits(1).south == elro.FRONTIER_ROOM, "'mapstubs on' relinks it from t
 elro.cmd_stubs("classic")
 ok(getRoomExits(1).south == nil and count(1) == 1, "'mapstubs classic' converts back to a Mudlet stub")
 ok(getRoomExits(1).east == elro.OFF_ROOM, "...and leaves the off-map link alone")
+
+print("walking between two facing stubs removes BOTH lines (Mudlet keys them 'e', 'w')")
+fresh() ; LINES = {}
+elro.cmd_stubs("edges")
+elro.onRoom(1, 0, "none", "Square", "t", "east", "outdoors")
+elro.onRoom(2, 0, "none", "Square east", "t", "west", "outdoors")
+setRoomCoordinates(1, 5, 5, 0) ; setRoomCoordinates(2, 6, 5, 0)
+elro.cs_reset()
+ok(LINES["1:east"] ~= nil and LINES["2:west"] ~= nil, "two facing stubs are drawn")
+elro.current = 1
+elro.onRoom(2, 1, "east", "Square east", "t", "west", "outdoors")
+ok(getRoomExits(1).east == 2 and getRoomExits(2).west == 1, "walking between them writes both edges")
+ok(LINES["1:east"] == nil, "...the stub on the room left is removed")
+ok(LINES["2:west"] == nil, "...and the stub on the room entered")
+elro.current = nil
+
+print("a stub drawn by an earlier version, in an old shade, is still removed")
+fresh() ; LINES = {}
+elro.onRoom(1, 0, "none", "Hall", "t", "north,south", "indoors")
+elro.cmd_stubs("edges")
+LINES["1:south"] = { 200, 200, 200 }    -- the corridor grey stubs were drawn in until now
+elro.onRoom(3, 1, "south", "Cellar", "t", "north", "indoors")
+ok(getRoomExits(1).south == 3, "walking south replaces the frontier link")
+ok(LINES["1:south"] == nil, "...and the old-shade stub is recognised and removed")
 
 print("")
 if fails == 0 then print("PASS  " .. checks .. "/" .. checks .. " checks passed")

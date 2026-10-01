@@ -663,8 +663,9 @@ function elro.draw_area_stubs(roomMap)
             -- where it belongs -- in the solve, by the veto in canvas.lua, which is
             -- what took lyr's long ugly spoke away by removing its cause.
             if dest == elro.FRONTIER_ROOM then
-              -- an unexplored exit: the plain grey half-line, no arrowhead (a stub's look)
-              pcall(addCustomLine, r, { { rx, ry, 0 }, { hx, hy, 0 } }, d,
+              -- an unexplored exit: a short grey line, no arrowhead (a stub's look)
+              local f = elro.FRONTIER_LEN or 0.3
+              pcall(addCustomLine, r, { { rx, ry, 0 }, { rx + del[1] * f, ry + del[2] * f, 0 } }, d,
                     "solid line", elro.FRONTIER_COL, false)
             elseif vp then
               -- Three points, always. The middle one is half a cell along the door's

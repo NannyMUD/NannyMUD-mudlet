@@ -4,7 +4,7 @@
 -- every past and future A/B of it VACUOUS. `elro.seamRank GOVERNS BOTH HALVES OF THE SEAM` carries
 -- three stars and nothing reads it.
 --
---   luajit analysis/knob_prose.lua            (from area/map_helper/client)
+--   luajit analysis/knob_prose.lua            (from nmp/client)
 --   luajit analysis/knob_prose.lua -v         (also print the first prose line for each)
 --
 -- METHOD, and it is the same machinery as the other two: split each file into CODE (comments and

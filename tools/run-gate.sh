@@ -81,7 +81,7 @@ elif ! diff -u analysis/canary_out.txt /tmp/gate_canary.txt >/tmp/gate_canary.di
   echo "gate: layout canary MOVED (committed baseline vs this tree)" >&2
   sed -n '3,40p' /tmp/gate_canary.diff | sed 's/^/    /' >&2
   echo "    If this change is intended, refresh the baseline in this same commit:" >&2
-  echo "      sh area/map_helper/client/analysis/canary.sh" >&2
+  echo "      sh nmp/client/analysis/canary.sh" >&2
   gfail=1
 fi
 

@@ -169,6 +169,118 @@ do
   eq(urgent, true, "a new room that arrived with no edge makes the relayout urgent")
 end
 
+-- ---- a walked closure that is truthful but longer than one cell -------------
+eq(closure(10, 12), true, "a walked closure two cells long makes the relayout urgent (stretched)")
+
+-- ---- walking INTO a room whose stub points back -------------------------------
+-- B still has its north unexplored (an exit to the placeholder). Walking south from
+-- A into B must give B the reverse edge and drop the stub, not keep it as an "exit".
+reset_map()
+local a8 = addAreaName("gurk")
+for id, c in pairs({ [1] = { 10, 10 }, [2] = { 10, 9 } }) do
+  addRoom(id) ; setRoomArea(id, a8) ; setRoomCoordinates(id, c[1], c[2], 0)
+  setRoomUserData(id, "sarea", "gurk")
+end
+setExit(2, elro.frontier_room(), "north")
+elro.cs_reset() ; elro.dirty = {}
+elro.current = 1
+elro.onRoom(2, 1, "south", "below", "gurk", "north", "")
+eq(getRoomExits(1)["south"], 2, "the walked edge is written")
+eq(getRoomExits(2)["north"], 1, "the far room's unexplored stub becomes the reverse edge")
+eq(getRoomUserData(2, "assumed_north"), "1", "...marked assumed, as reverses are")
+
+-- ---- two facing stubs, walked: an edge, drawn on the step ---------------------
+reset_map()
+local a11 = addAreaName("gurk")
+for id, c in pairs({ [1] = { 10, 10 }, [2] = { 11, 10 } }) do
+  addRoom(id) ; setRoomArea(id, a11) ; setRoomCoordinates(id, c[1], c[2], 0)
+  setRoomUserData(id, "sarea", "gurk")
+end
+setExit(1, elro.frontier_room(), "east") ; setExit(2, elro.frontier_room(), "west")
+elro.cs_reset() ; elro.dirty = {}
+elro.current = 1
+do
+  local repaints = 0
+  local realUM = updateMap
+  updateMap = function() repaints = repaints + 1 end
+  elro.onRoom(2, 1, "east", "next door", "gurk", "west", "")
+  eq(getRoomExits(1)["east"], 2, "facing stubs walked: the forward edge")
+  eq(getRoomExits(2)["west"], 1, "...and the reverse, replacing the far stub")
+  eq(repaints > 0, true, "...repainted on the step, not at the next relayout")
+  -- ...and also while a background relayout is running, which is most of the time
+  -- while exploring
+  local realBB = elro.bg_busy
+  elro.bg_busy = function() return true end
+  setExit(1, elro.frontier_room(), "north") ; setExit(2, elro.frontier_room(), "north")
+  addRoom(3) ; setRoomArea(3, a11) ; setRoomCoordinates(3, 10, 11, 0) ; setRoomUserData(3, "sarea", "gurk")
+  setExit(3, elro.frontier_room(), "south")
+  elro.cs_reset()
+  repaints = 0
+  elro.current = 1
+  elro.onRoom(3, 1, "north", "up the path", "gurk", "south", "")
+  eq(getRoomExits(3)["south"], 1, "a background relayout running: the edge is still written")
+  eq(repaints > 0, true, "...and still repainted on the step")
+  elro.bg_busy = realBB
+  -- walking back promotes the assumed reverse to observed: a change, so it may repaint
+  elro.current = 2
+  elro.onRoom(1, 2, "west", "back", "gurk", "east", "")
+  repaints = 0
+  elro.current = 1
+  elro.onRoom(2, 1, "east", "next door", "gurk", "west", "")
+  eq(repaints, 0, "walking an observed edge again changes nothing and does not repaint")
+  updateMap = realUM
+end
+elro.current = nil
+
+-- ---- a step across canvases draws the blue stubs at once ----------------------
+-- area_min 1: a one-room area keeps its own canvas instead of folding into world
+local realAM, realAML = elro.area_min, elro.areamin_loaded
+elro.area_min, elro.areamin_loaded = 1, true
+-- Both rooms already placed, each on its own canvas (5 pinned there, as mapsteal
+-- does): a NEW room in a new area is absorbed by the canvas it was entered from.
+reset_map()
+local a9 = addAreaName("gurk")
+local a10 = addAreaName("zork")
+addRoom(1) ; setRoomArea(1, a9) ; setRoomCoordinates(1, 10, 10, 0) ; setRoomUserData(1, "sarea", "gurk")
+addRoom(5) ; setRoomArea(5, a10) ; setRoomCoordinates(5, 0, 0, 0) ; setRoomUserData(5, "sarea", "zork")
+setRoomUserData(5, "adopt", "zork")
+elro.cs_reset() ; elro.dirty = {}
+elro.current = 1
+do
+  local drawn = {}
+  local realACL = addCustomLine
+  addCustomLine = function(r, _, d) drawn[r .. ":" .. d] = true end
+  elro.onRoom(5, 1, "east", "over the border", "zork", "west", "")
+  addCustomLine = realACL
+  eq(getRoomArea(5) ~= getRoomArea(1), true, "the new room is on another canvas")
+  eq(drawn["1:east"], true, "the room left gets its blue stub on the step, not at a relayout")
+  eq(drawn["5:west"], true, "...and so does the room entered")
+end
+elro.current = nil
+elro.area_min, elro.areamin_loaded = realAM, realAML
+
+-- ---- the terrain colour definitions are set on the first map line of a session ----
+-- An older profile's map brings its own env colours when it loads, after startup set ours.
+reset_map()
+local a12 = addAreaName("gurk")
+addRoom(1) ; setRoomArea(1, a12) ; setRoomCoordinates(1, 10, 10, 0) ; setRoomUserData(1, "sarea", "gurk")
+elro.cs_reset() ; elro.dirty = {}
+do
+  local defs = 0
+  local realSCE = setCustomEnvColor
+  setCustomEnvColor = function() defs = defs + 1 end
+  elro._envSession = nil
+  elro.current = 1
+  elro.onRoom(2, 1, "east", "the gate", "gurk", "west", "forest")
+  eq(defs > 0, true, "the first map line of a session sets the terrain colours")
+  defs = 0
+  elro.current = 2
+  elro.onRoom(3, 2, "east", "the road", "gurk", "west", "road")
+  eq(defs, 0, "...and later lines do not set them again")
+  setCustomEnvColor = realSCE
+end
+elro.current = nil
+
 cecho = realcecho
 print(string.format("test_onroom: %d check(s), %d failure(s)", checks, fail))
 os.exit(fail == 0 and 0 or 1)

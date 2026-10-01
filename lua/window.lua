@@ -335,6 +335,11 @@ if type(registerAnonymousEventHandler) == "function" then
     if not (elro.miniBox and not (elro.miniBox.hidden or elro.miniBox.auto_hidden)) then
       elro._dockOpen = true
     end
+    -- opening the map can load it, and with it the terrain colours an older map saved
+    if elro.terrain_env_init then
+      elro.terrain_env_init()
+      if type(updateMap) == "function" then pcall(updateMap) end
+    end
   end)
   elro._winResize = registerAnonymousEventHandler("sysWindowResizeEvent", anchor)
   -- A drag or resize just ended: keep the new size, snap back to the corner.

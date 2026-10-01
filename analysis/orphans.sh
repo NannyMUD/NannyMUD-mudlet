@@ -5,7 +5,7 @@
 # ⚠ COMMENTS ARE STRIPPED FIRST. A previous sweep missed `pendants_of` and `classify_map`
 # because each is NAMED IN A COMMENT elsewhere, which counted as a caller.
 # ⚠ elro.fakepurge has NO CALLER BY DESIGN (hand-invoked from the Mudlet command line).
-cd c:/mud/onserver/area/map_helper/client || exit 1
+cd c:/mud/onserver/nmp/client || exit 1
 TMP=$(mktemp -d)
 for f in lua/*.lua; do
   sed 's/--.*$//' "$f" > "$TMP/$(basename $f)"

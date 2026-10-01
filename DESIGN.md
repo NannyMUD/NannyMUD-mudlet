@@ -179,12 +179,20 @@ after an ack reporting 1.1.0, to spare 1.0.0 clients a raw line), and that made
 a feature depend on state kept in two places: the link forgets the client at
 every login while the client remembered having said hello for the whole Mudlet
 session, so a relog silently switched the markers off. 1.0.0 had no users, so
-the gate went. The ack itself is still re-sent after a reload or a reconnect,
-and by `mapack`, because the version notice and `nmp`'s status use it.
+the gate went. The ack and `mapack` went too, with the admin's `!NMAP` server,
+which has no `nmp` command to answer them.
+
+**The admin's server (`!NMAP`, 2026-10-01)** sends `-1` where the old one sent
+`0`, for both `id` and `from`; `nmp_line` reads either. It sends no line for a
+move into the dark or one with no look, so the next line's `from` can name a
+room the client never put the player in: `nmp_line` treats any such `from` as
+`0`, a jump, and draws no edge. The dark itself is the NannyMUD trigger on the
+exact line "A dark room.", which calls `elro.offgrid()`; the map side knows
+nothing of the text, so another mud changes only that trigger.
 
 **The command fence (`!MAPSEQ`) is gone** (1.5.0, 2026-09-23): the server
 reads the typed command from the driver itself now, so `onSeq`, `fence_take`,
-the `maplink seq auto` handshake line and the fence trigger are removed. The
+the `seq auto` handshake line and the fence trigger are removed. The
 trigger regex still treats `dir=` as optional; a missing field is `none`. The
 server side is in `../DESIGN.md`.
 

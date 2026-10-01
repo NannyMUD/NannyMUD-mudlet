@@ -2,7 +2,7 @@
 --
 -- Runs the SHIPPED functions behind engine_load's Mudlet stubs. The WALK is not
 -- covered: getPath is Mudlet's own router and the harness has no stub for it.
---   cd .../map_helper/client && luajit analysis/test_near.lua
+--   cd .../nmp/client && luajit analysis/test_near.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

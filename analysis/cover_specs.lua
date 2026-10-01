@@ -1,6 +1,6 @@
 -- Emit the knob-sweep spec list for `cover_knobs.sh`, one `<tag>\t<spec>` per line.
 --
---   luajit analysis/cover_specs.lua            (from area/map_helper/client)
+--   luajit analysis/cover_specs.lua            (from nmp/client)
 --
 -- For every entry of `elro.KNOBS` we want the configuration that flips its branch, which means
 -- knowing the DEFAULT -- and the default lives in the READ, not in the registry:

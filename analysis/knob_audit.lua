@@ -1,6 +1,6 @@
 -- Audit elro.KNOBS: does each knob's registry comment agree with how the code GATES it?
 --
---   luajit analysis/knob_audit.lua        (from area/map_helper/client)
+--   luajit analysis/knob_audit.lua        (from nmp/client)
 --
 -- WHY IT EXISTS: `seamEq` shipped with its registry line saying "DEFAULT OFF" while the code read
 -- `elro.seamEq ~= false`, i.e. default ON -- and the comment's justification (a titleist regression)

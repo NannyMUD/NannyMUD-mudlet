@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Reported to the server by the handshake in onRoom. Kept in step with config.lua's
 -- `version` by tools/build-package.sh, which refuses to build if the two differ.
-elro.VERSION = "2.0.0"
+elro.VERSION = "3.0.0"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -1956,7 +1956,14 @@ end
 -- OFF_ROOM's, so "not been there" and "known but unmappable" stay two things on screen.
 elro.FRONTIER_ROOM = 899998
 elro.FRONTIER_AREA = "unexplored"          -- a canvas of its own: nothing to see there, nothing in the way
-elro.FRONTIER_COL = { 200, 200, 200 }      -- Mudlet's exit-line grey: the same ink as a corridor
+-- A dim slate blue, not a corridor's grey (200), so an unexplored stub never reads as an edge.
+elro.FRONTIER_COL = { 90, 90, 140 }
+-- Shades earlier versions drew stubs in; maps still carry them, and stub_apply must
+-- recognise them to remove one, or the stub would replace the corridor's drawing.
+elro.FRONTIER_OLD = { { 150, 150, 150 }, { 200, 200, 200 }, { 110, 110, 110 } }
+-- An unexplored stub stops short of half a cell, so two facing stubs leave a gap
+-- and never read as one corridor.
+elro.FRONTIER_LEN = elro.FRONTIER_LEN or 0.3
 function elro.frontier_room()
   local id = elro.FRONTIER_ROOM
   if not roomExists(id) then
@@ -3676,6 +3683,8 @@ function elro.guess_inconsistent(id, aid, skip, only)
             if occ and occ ~= id and occ ~= x then hit = occ end
           end)
           if hit then return "over-room", d, x end
+          -- truthful and clear, but longer than one step: the layout can tighten it now
+          if math.max(math.abs(qx - px), math.abs(qy - py)) > 1 then return "stretched", d, x end
         end
       end
     end
@@ -4059,15 +4068,17 @@ function elro.stub_apply(id, advertised)
   if edges and type(getCustomLines) == "function" and type(removeCustomLine) == "function" then
     local got, lines = pcall(getCustomLines, id)
     for d in pairs(real) do
-      local ln = got and type(lines) == "table" and lines[d]
+      -- Mudlet keys a room's custom lines by the SHORT direction ("nw"), whatever it was given
+      local key = got and type(lines) == "table" and (lines[d] and d or elro.shortDir(d))
+      local ln = key and lines[key]
       local c = type(ln) == "table" and ln.attributes and ln.attributes.color
       local cr = c and (c.r or c[1])
-      local fc = elro.FRONTIER_COL
       local cg, cb = c and (c.g or c[2]), c and (c.b or c[3])
-      -- 150 was the first day's shade; maps drawn then still carry it
-      if (cr == fc[1] and cg == fc[2] and cb == fc[3]) or (cr == 150 and cg == 150 and cb == 150) then
-        pcall(removeCustomLine, id, d)
+      local ours = false
+      for _, fc in ipairs({ elro.FRONTIER_COL, unpack(elro.FRONTIER_OLD) }) do
+        if cr == fc[1] and cg == fc[2] and cb == fc[3] then ours = true end
       end
+      if ours then pcall(removeCustomLine, id, key) end
     end
   end
   if changed then
@@ -4388,19 +4399,95 @@ function elro.cmd_profile(arg)
     "  view (centerview). 'mapprofile off' to stop.\n<reset>", elro.profMin))
 end
 
--- The handshake is owed again whenever the link on the other end can be a new
--- one: this code was (re)loaded, or the connection dropped or came up. The link
--- forgets the client with every login, and sends the off-map markers only to a
--- version it has heard from, so an ack per Mudlet SESSION lost them at a relog.
-elro._ackSent = nil
+-- A new connection starts with no command in flight.
 if type(registerAnonymousEventHandler) == "function" then
   for _, ev in ipairs({ "sysConnectionEvent", "sysDisconnectionEvent" }) do
     local key = "_ackH_" .. ev
     if elro[key] and type(killAnonymousEventHandler) == "function" then
       pcall(killAnonymousEventHandler, elro[key])
     end
-    elro[key] = registerAnonymousEventHandler(ev, function() elro._ackSent = nil end)
+    elro[key] = registerAnonymousEventHandler(ev, function() elro.sentQ = {} end)
   end
+end
+
+-- Commands sent and not yet answered by a prompt, oldest first. Each command gets
+-- exactly one GA prompt, so the head is the command the current output belongs to.
+elro.sentQ = {}
+elro.sentMax, elro.sentAgeMs = 64, 10000
+
+function elro.sent_push(text)
+  local q, now = elro.sentQ, elro.now_ms()
+  -- a command that never got its prompt would shift every later turn; idle heals it
+  while q[1] and now - q[1].at > elro.sentAgeMs do table.remove(q, 1) end
+  q[#q + 1] = { cmd = text or "", at = now }
+  if #q > elro.sentMax then table.remove(q, 1) end
+end
+
+function elro.sent_pop()
+  table.remove(elro.sentQ, 1)
+end
+
+-- A server that sends only the verb ("crawl") gets the typed arguments back
+-- ("crawl se") when the command in flight starts with that verb. Anything else,
+-- including a dir that already carries arguments, passes unchanged.
+function elro.amend_dir(dir)
+  local h = elro.sentQ[1]
+  if not h or not dir or dir == "" or dir:find("%s") then return dir end
+  if elro.now_ms() - h.at > elro.sentAgeMs then return dir end
+  local cmd = h.cmd:gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " ")
+  local verb = cmd:match("^(%S+) ")
+  if verb and verb:lower() == dir:lower() then return cmd end
+  return dir
+end
+
+-- Strict mode: an exit is drawn only when the command in flight is the one the
+-- line reports. Off by default; for players whose guild rewrites what they see.
+function elro.strict_on()
+  if elro.strict == nil then
+    elro.strict = false
+    if type(getMapUserData) == "function" then
+      local ok, s = pcall(getMapUserData, "elro.strict")
+      elro.strict = (ok and s == "1") or false
+    end
+  end
+  return elro.strict
+end
+
+-- Was `dir` the command in flight? Compared as directions, so 's' is 'south'.
+function elro.dir_sent(dir)
+  local h = elro.sentQ[1]
+  if not h or not dir or elro.now_ms() - h.at > elro.sentAgeMs then return false end
+  local function canon(s) return elro.norm((s:lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("%s+", " "))) end
+  return canon(h.cmd) == canon(dir)
+end
+
+-- mapstrict [on|off]
+function elro.cmd_strict(arg)
+  arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if arg == "on" or arg == "off" then
+    elro.strict = (arg == "on")
+    if type(setMapUserData) == "function" then
+      pcall(setMapUserData, "elro.strict", elro.strict and "1" or "")
+    end
+  end
+  cecho(elro.strict_on()
+    and "\n<yellow>[elro]: strict mode ON: an exit is drawn only when the game reports the command you sent," ..
+        "\n  and a known room reported under another area is ignored. Moves you did not type, such" ..
+        "\n  as following a party leader, and in-game aliases draw no exit.\n<reset>"
+    or  "\n<cyan>[elro]: strict mode off: every exit the game reports is drawn. 'mapstrict on' for a guild" ..
+        "\n  that rewrites what you see.\n<reset>")
+end
+
+if type(registerAnonymousEventHandler) == "function" then
+  if elro._sentH and type(killAnonymousEventHandler) == "function" then
+    pcall(killAnonymousEventHandler, elro._sentH)
+  end
+  elro._sentH = registerAnonymousEventHandler("sysDataSendRequest",
+    function(_, text) elro.sent_push(text) end)
+end
+if type(tempPromptTrigger) == "function" then
+  if elro._sentP and type(killTrigger) == "function" then pcall(killTrigger, elro._sentP) end
+  elro._sentP = tempPromptTrigger(function() elro.sent_pop() end)
 end
 
 -- mapupdate [file]: replace this package with the newest release, in one command.
@@ -4466,7 +4553,8 @@ function elro.cmd_update(arg)
     elro.update_swap(arg) ; return
   end
   if type(downloadFile) ~= "function" then
-    cecho("\n<red>[elro]: this Mudlet cannot download; see 'nmp setup'.\n<reset>") return
+    cecho("\n<red>[elro]: this Mudlet cannot download. Get the package by hand:\n  " ..
+          elro.UPDATE_URL .. "\n<reset>") return
   end
   local dir = getMudletHomeDir() .. "/elro_update"
   if lfs and lfs.mkdir then pcall(lfs.mkdir, dir) end
@@ -4495,18 +4583,10 @@ function elro.cmd_update(arg)
   downloadFile(path, elro.UPDATE_URL)
 end
 
--- mapack: say hello to the link again, now. For a link re-cloned in mid-session,
--- which nothing on this side can notice.
-function elro.cmd_ack()
-  if type(send) ~= "function" then return end
-  elro._ackSent = true
-  pcall(send, "nmp ack " .. tostring(elro.VERSION), false)
-  cecho("\n<green>[elro]: told the link this is client " .. tostring(elro.VERSION) .. ".\n<reset>")
-end
-
--- The !NMP line, as `key=value` pairs joined by `|`, in any order, keys the client
--- does not know ignored: a field added on the server reaches an older client as
--- nothing, not as a line that fails to match. id=0 is the off-map marker.
+-- The map line (!NMP or !NMAP), as `key=value` pairs joined by `|`, in any order,
+-- keys the client does not know ignored: a field added on the server reaches an
+-- older client as nothing, not as a line that fails to match. An id of 0 or -1 is
+-- the off-map marker, and so is a from of -1.
 function elro.nmp_fields(text)
   local f = {}
   for pair in string.gmatch(text or "", "[^|]+") do
@@ -4520,11 +4600,32 @@ function elro.nmp_line(text)
   local f = elro.nmp_fields(text)
   local id, from = tonumber(f.id), tonumber(f.from)
   if not id then return end
-  if id == 0 then
+  f.dir = elro.amend_dir(f.dir)
+  if from and from < 0 then from = 0 end
+  -- A move the client never saw (into the dark, or with no look) leaves `from`
+  -- naming a room it did not put the player in: a jump, so no edge is drawn.
+  if from and from ~= 0 and elro.current and from ~= elro.current then from = 0 end
+  if from and from ~= 0 and elro.strict_on() and not elro.dir_sent(f.dir) then from = 0 end
+  -- Strict mode: a known room reported under another area is a garbled line;
+  -- the ids are digits and survive, the area is letters and may not.
+  if id > 0 and elro.strict_on() and roomExists(id) then
+    local had = getRoomUserData(id, "sarea")
+    local sa = (f.area and f.area ~= "") and f.area or "world"
+    if had and had ~= "" and had ~= sa then
+      elro.offgrid()
+      return
+    end
+  end
+  if id <= 0 then
     if elro.onOff then elro.onOff(from or 0, f.dir) end
     return
   end
   elro.onRoom(id, from, f.dir, f.name, f.area, f.exits, f.terr, f.mha, f.mh)
+end
+
+-- The player is somewhere the map cannot show; nothing is recorded about how.
+function elro.offgrid()
+  elro.onOff(0)
 end
 
 function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
@@ -4532,14 +4633,6 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
   elro.offmap = nil            -- any mapped room ends an excursion off the map
   local _pfTotal
   if elro.profOn then elro._prof = {} ; _pfTotal = pf("total") end
-  -- Handshake, once per session. The link streams whether or not anything is
-  -- listening, so without this the game cannot tell a player whose client is
-  -- missing from one whose client is fine. Sent on the first !NMP line rather
-  -- than at load: Mudlet runs its scripts before the connection exists.
-  if not elro._ackSent and type(send) == "function" then
-    elro._ackSent = true
-    pcall(send, "nmp ack " .. tostring(elro.VERSION), false)
-  end
   if dir == nil or dir == "" then dir = "none" end
   dir = elro.norm(dir)
   -- An old trigger regex (`exits=(.*)$`) leaks later fields into `exits`. A real
@@ -4695,7 +4788,8 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
         -- (first-writer wins), and only add it when id advertises that exit.
         local rev = elro.reverse[dir]
         local rex = rec and rec.ex or (getRoomExits(id) or {})
-        if rev and not rex[rev] and elro.advertises(exits, rev) then
+        -- an unexplored stub is a placeholder, not an edge: the reverse replaces it
+        if rev and (not rex[rev] or rex[rev] == elro.FRONTIER_ROOM) and elro.advertises(exits, rev) then
           setExit(id, fromId, rev)
           setRoomUserData(id, "assumed_" .. rev, "1")
           touched[id] = true
@@ -4791,8 +4885,19 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
   -- exit-stub section above for why the record has to exist at all
   local adv = elro.stub_note(id, exits)
   elro.stub_apply(id, adv)
+  -- a step across canvases: the blue stubs of both ends now, not at the next relayout
+  if fromId and fromId ~= 0 and roomExists(fromId) and getRoomArea(fromId) ~= getRoomArea(id)
+     and elro.draw_area_stubs then
+    elro.draw_area_stubs({ [fromId] = true, [id] = true })
+  end
   -- ...and retire the stubs you have walked away from (no-op below the threshold)
   elro.stub_halo_update()
+  -- The colour each terrain env stands for lives in the map file, and a map loaded after
+  -- our startup set them (an older profile's) brings its own: set them again, once.
+  if not elro._envSession then
+    elro._envSession = true
+    elro.terrain_env_init()
+  end
   -- 4. terrain: stored, then painted from the store. Last on purpose, after
   -- the fold inheritance has settled (highlight_paint arbitrates against it).
   -- Not in the c-space snapshot, so no touched/changed. A nil terr is an older
@@ -4845,6 +4950,12 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
       elro.markDirty(effAid, urgent)
       _pfD()
     end
+  end
+  -- A step that rewrote exits between rooms already on the map (two facing stubs become
+  -- an edge) shows now, not at the next relayout. Safe while a relayout is in flight: it
+  -- writes coordinates in one block (write_compose has no bg_tick), never half a layout.
+  if changed and not isNew and type(updateMap) == "function" then
+    updateMap()
   end
   local _pfV = pf("view")
   elro.recenter()
@@ -5525,7 +5636,7 @@ local HELP_ADV = {
   { "mapprofile [on|off|ms]","time the phases of each move (graph / terrain / guess / relayout / view) and print the ones over <ms>; for finding what a slow move is actually doing" },
   { "mapecho [on|off]",   "should a relayout report when it finishes (time, frames, the solver's profile)? Off by default, and then no relayout prints anything" },
   { "mapoff [id]",        "what is recorded for a room about exits that leave the map: the record, the stubs, the custom lines" },
-  { "mapack",             "tell the game which client this is, again. Needed only if 'nmp' says no client has answered" },
+  { "mapstrict [on|off]", "draw an exit only when the game reports the command you sent, and ignore a known room reported under another area. For a guild that rewrites what you see; following a party leader then draws no exits. Off by default" },
   { "mapaudit [all]",     "exits whose geometry the trustworthy (walked-both-ways) exits refute -- usually mistyped links" },
   { "mapedges [<id>]",    "outgoing and incoming edges for a room (default: current)" },
   { "mapmut [<id>]",      "per-exit mutation counters and lock state (default: current room)" },
@@ -5570,7 +5681,7 @@ local HELP_SHARE = {
   "",
   "The file carries everything: rooms, exits, the special exits you recorded, terrain, merges, "
     .. "folds and the rooms speedwalks keep out of. Only the map window's size and corner "
-    .. "belong to the profile. The receiving profile needs this package too, and 'nmp on' "
+    .. "belong to the profile. The receiving profile needs this package too, and 'toggle map on' "
     .. "in the game to keep mapping.",
   "",
   "A map shows where you have been. Handing one over hands over that exploring.",
@@ -5620,8 +5731,8 @@ function elro.map_help(arg)
         .. (adv and "advanced commands" or "everyday commands") .. "\n")
   -- two help systems, and a new player cannot tell which is which
   for _, l in ipairs(elro.wrap_text("These commands belong to this Mudlet package and are never "
-      .. "sent to the game. The game's own side is 'help nmp' (switching the stream on and "
-      .. "off).", width - 3)) do
+      .. "sent to the game. The game's own side is 'toggle map on' and 'toggle map off', "
+      .. "which switch the map tags on and off.", width - 3)) do
     cecho("<cyan>  " .. l .. "<reset>\n")
   end
   emit(adv and HELP_ADV or HELP_BASIC)

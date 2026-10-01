@@ -8,7 +8,7 @@
 --
 -- The corpus cannot cover this: dumps carry rooms, exits and coordinates only, no
 -- fold data. So the fixtures are built here.
---   cd .../map_helper/client && luajit analysis/test_mazevertex.lua
+--   cd .../nmp/client && luajit analysis/test_mazevertex.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

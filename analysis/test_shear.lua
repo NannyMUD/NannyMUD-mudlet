@@ -3,7 +3,7 @@
 --
 -- ⭐ NO EXTRACT. layout.lua loads standalone under luajit (`elro = {} ; dofile "layout.lua"`), so
 -- this drives the REAL functions and cannot go stale the way the sed/awk extracts do.
---   cd area/map_helper/client/lua && luajit ../analysis/test_shear.lua
+--   cd nmp/client/lua && luajit ../analysis/test_shear.lua
 elro = {}
 for _, m in ipairs(dofile("modules.lua")) do dofile(m) end
 -- core.lua:102 verbatim; core.lua itself needs Mudlet, layout.lua does not.

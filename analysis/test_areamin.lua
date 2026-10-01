@@ -7,7 +7,7 @@
 -- out of `world` into a tab of its own -- it left the canvas it was drawn on and
 -- the edge you arrived by turned cross-area, so Mudlet's default stub replaced
 -- the blue one until the next relayout put it all back.
---   cd .../map_helper/client && luajit analysis/test_areamin.lua
+--   cd .../nmp/client && luajit analysis/test_areamin.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

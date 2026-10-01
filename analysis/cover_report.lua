@@ -64,7 +64,7 @@ end
 
 local SRC, EXEC, PROTOS = {}, {}, {}
 for tag, path in pairs(FILES) do
-  local fh = assert(io.open(path), "run me from area/map_helper/client")
+  local fh = assert(io.open(path), "run me from nmp/client")
   local src = fh:read("*a") ; fh:close()
   local lines = {}
   for l in (src .. "\n"):gmatch("([^\n]*)\n") do lines[#lines + 1] = l end

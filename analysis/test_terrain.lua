@@ -2,7 +2,7 @@
 --
 -- Runs the SHIPPED functions behind engine_load's Mudlet stubs, so this exercises
 -- the real table and the real priority ladder rather than a restatement of them.
---   cd .../map_helper/client && luajit analysis/test_terrain.lua
+--   cd .../nmp/client && luajit analysis/test_terrain.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

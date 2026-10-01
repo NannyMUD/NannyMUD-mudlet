@@ -9,7 +9,7 @@
 -- ever tied those rooms together and where they sit records the absence of the
 -- constraint. The real question is how many cells the maze must occupy, which
 -- depends only on how many ways one room faces it.
---   cd .../map_helper/client && luajit analysis/test_mazefit.lua
+--   cd .../nmp/client && luajit analysis/test_mazefit.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

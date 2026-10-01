@@ -3,7 +3,7 @@
 --
 -- ⭐ This harness LOADS THE REAL FILES. No awk/sed extraction, so it can never
 -- go stale against the engine -- which is the whole reason those functions were
--- put at module scope. Run from area/map_helper/client:
+-- put at module scope. Run from nmp/client:
 --     luajit analysis/test_audit.lua
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
 

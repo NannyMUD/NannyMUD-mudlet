@@ -22,7 +22,7 @@ for _, m in ipairs(dofile("lua/modules.lua")) do if m == file .. ".lua" then PAT
 PATH = PATH or error("unknown module tag " .. file .. " (see lua/modules.lua)")
 local WANTTAGS = os.getenv("TAGS")
 
-local fh = assert(io.open(PATH), "run me from area/map_helper/client")
+local fh = assert(io.open(PATH), "run me from nmp/client")
 local src = fh:read("*a") ; fh:close()
 local SRC = {}
 for l in (src .. "\n"):gmatch("([^\n]*)\n") do SRC[#SRC + 1] = l end

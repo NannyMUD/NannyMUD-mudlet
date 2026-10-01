@@ -6,7 +6,7 @@
 -- would undo an unmerge; if the two callers disagreed, a room would flip tabs on
 -- every entry; and without the pin, area_min folds a half-explored unmerged area
 -- straight back, which looks exactly like the unmerge failing.
---   cd .../map_helper/client && luajit analysis/test_hints.lua
+--   cd .../nmp/client && luajit analysis/test_hints.lua
 dofile("analysis/engine_load.lua")
 
 local fails, checks = 0, 0

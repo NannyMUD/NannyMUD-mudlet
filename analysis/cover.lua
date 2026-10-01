@@ -1,7 +1,7 @@
 local f = assert(io.open("analysis/cover_impl.lua")) local s = f:read("*a") f:close() assert(loadstring(("\n"):rep(50000) .. s, "@analysis/cover_impl.lua"))()
 -- ^^^ THE WHOLE LOADER IS ONE PHYSICAL LINE, ON PURPOSE. Read analysis/cover_impl.lua for the tool.
 --
--- LINE COVERAGE for the layout engine (`analysis/cover.lua`, run from area/map_helper/client):
+-- LINE COVERAGE for the layout engine (`analysis/cover.lua`, run from nmp/client):
 --
 --   luajit analysis/cover.lua <out.cov> <dump> [knobspec ...]
 --

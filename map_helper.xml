@@ -32,7 +32,27 @@ elro.nmp_line(matches[2])</script>
 				<colorTriggerFgColor>#000000</colorTriggerFgColor>
 				<colorTriggerBgColor>#000000</colorTriggerBgColor>
 				<regexCodeList>
-					<string>^!NMP (.+)$</string>
+					<string>^!NMA?P (.+)$</string>
+				</regexCodeList>
+				<regexCodePropertyList>
+					<integer>1</integer>
+				</regexCodePropertyList>
+			</Trigger>
+			<Trigger isActive="yes" isFolder="no" isTempTrigger="no" isMultiline="no" isPerlSlashGOption="no" isColorizerTrigger="no" isFilterTrigger="no" isSoundTrigger="no" isColorTrigger="no" isColorTriggerFg="no" isColorTriggerBg="no">
+				<name>NannyMUD dark room</name>
+				<script>elro.offgrid()</script>
+				<triggerType>0</triggerType>
+				<conditonLineDelta>0</conditonLineDelta>
+				<mStayOpen>0</mStayOpen>
+				<mCommand></mCommand>
+				<packageName></packageName>
+				<mFgColor>#ff0000</mFgColor>
+				<mBgColor>#ffff00</mBgColor>
+				<mSoundFile></mSoundFile>
+				<colorTriggerFgColor>#000000</colorTriggerFgColor>
+				<colorTriggerBgColor>#000000</colorTriggerBgColor>
+				<regexCodeList>
+					<string>^A dark room\.$</string>
 				</regexCodeList>
 				<regexCodePropertyList>
 					<integer>1</integer>
@@ -147,6 +167,13 @@ elro.relayout_this()</script>
 				<regex>^mapcur (.+)$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>mapstrict</name>
+				<script>elro.with_rest(matches[2], elro.cmd_strict)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapstrict(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>maphints</name>
 				<script>elro.with_rest(matches[2], elro.cmd_hints)</script>
 				<command></command>
@@ -166,13 +193,6 @@ elro.relayout_this()</script>
 				<command></command>
 				<packageName></packageName>
 				<regex>^mapoff(?:\s+(\d+))?$</regex>
-			</Alias>
-			<Alias isActive="yes" isFolder="no">
-				<name>mapack</name>
-				<script>elro.cmd_ack()</script>
-				<command></command>
-				<packageName></packageName>
-				<regex>^mapack$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
 				<name>mapecho</name>
@@ -727,7 +747,7 @@ if not elro.src_dir then
   local ok, f = pcall(io.open, d .. "/modules.lua", "r")
   if ok and f then f:close() ; elro.src_dir = d end
 end
-elro.src_dir = elro.src_dir or "c:/mud/onserver/area/map_helper/client/lua"
+elro.src_dir = elro.src_dir or "c:/mud/onserver/nmp/client/lua"
 
 -- The ordered module list lives in lua/modules.lua and is re-read on every load, so
 -- adding a module needs only `mapreload`, not a package reinstall. The literal list
@@ -750,7 +770,7 @@ function elro.load_modules()
       cecho("\n&lt;red&gt;[elro] FAILED to load " .. path .. ":&lt;reset&gt; " .. tostring(err) .. "\n")
     end
   end
-  cecho(string.format("\n&lt;green&gt;[elro] ElrohirMapper %s loaded%s. 'maphelp' is this client's help; in the game it is 'help nmp'.&lt;reset&gt;\n",
+  cecho(string.format("\n&lt;green&gt;[elro] ElrohirMapper %s loaded%s. 'maphelp' is this client's help; in the game, 'toggle map on' switches the map tags on.&lt;reset&gt;\n",
         tostring(elro.VERSION or "?"),
         failed &gt; 0 and (" with " .. failed .. " module(s) FAILED") or ""))
   -- AND DROP THE C-SPACE SNAPSHOT. `elro` survives a reload on purpose, so

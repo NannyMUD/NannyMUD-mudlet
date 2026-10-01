@@ -1,4 +1,4 @@
--- PER-KNOB ATTRIBUTION over the `cover_knobs.sh` sweep.  Run from area/map_helper/client:
+-- PER-KNOB ATTRIBUTION over the `cover_knobs.sh` sweep.  Run from nmp/client:
 --
 --   luajit analysis/cover_delta.lua                       # every tag in analysis/cov
 --   MIN=1 luajit analysis/cover_delta.lua faceFit_on      # the blocks, for one tag
@@ -67,7 +67,7 @@ local SRC = {}
 local FILES = {}
 for _, m in ipairs(dofile("lua/modules.lua")) do FILES[(m:gsub("%.lua$", ""))] = "lua/" .. m end
 for tag, path in pairs(FILES) do
-  local fh = assert(io.open(path), "run me from area/map_helper/client")
+  local fh = assert(io.open(path), "run me from nmp/client")
   local t = {}
   for l in (fh:read("*a") .. "\n"):gmatch("([^\n]*)\n") do t[#t + 1] = l end
   fh:close()

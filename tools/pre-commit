@@ -87,7 +87,7 @@ done
 # so it warns below when the two differ.
 if [ -z "$SKIP_GATE" ]; then
   root=$(git rev-parse --show-toplevel)
-  gate="$root/area/map_helper/client/tools/run-gate.sh"
+  gate="$root/nmp/client/tools/run-gate.sh"
   staged_engine=$(git diff --cached --name-only --diff-filter=ACM \
                   -- '*/client/lua/*.lua' '*/client/map_helper.xml')
   if [ -n "$staged_engine" ] && [ -f "$gate" ]; then
