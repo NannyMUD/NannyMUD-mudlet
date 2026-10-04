@@ -40,8 +40,8 @@ for m in mods:
 files += [os.path.join('lua', m) for m in order]
 files.append(os.path.join('lua', 'modules.lua'))
 
-# config.lua's version is what a user sees; elro.VERSION is what the client reports
-# to the server in its handshake. If they drift, the server names the wrong version.
+# config.lua's version is the package's; elro.VERSION is what the client prints at
+# load. If they drift, the player is told the wrong version.
 cfg = re.search(r'version\s*=\s*"([^"]+)"',
                 open(os.path.join(root, 'config.lua'), encoding='utf-8').read())
 run = re.search(r'elro\.VERSION\s*=\s*"([^"]+)"',

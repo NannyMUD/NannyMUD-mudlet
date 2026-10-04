@@ -1,9 +1,10 @@
 # nannymud-mapper
 
 Client-side automap for [NannyMUD](https://nannymud.lysator.liu.se/). A Mudlet package that
-computes each area's layout in Lua from the game's map tags (one `!NMAP` line per move).
+computes each area's layout in Lua from the game's map data, sent over GMCP or as one `!NMAP`
+line per move.
 
-The game sends one line per move — room id, where you came from, the command you typed, the
+The game sends one message per move — room id, where you came from, the command you typed, the
 room's name, area, exits and terrain.
 It does no rendering and stores no coordinates. Everything you see is solved on the client:
 which rooms form an area, where each one goes, and which edges have to bend.
@@ -44,15 +45,28 @@ to another program and back, the text of the session you are not in can go black
 lost; click into that session and it redraws. It has only been seen after locking the map window
 from its right-click menu; `mapwin lock` does the same job and has not caused it.
 
-**2. Switch the map tags on, in game.** The game sends them only to players who asked for
-them, because without this package they are a line of text on every move:
+**2. Switch the map data on, in game.** The game sends it only to players who ask for it,
+over GMCP, the channel Mudlet uses for game data beside the text:
 
 ```
-toggle map on    remembered when you log in again
-toggle map off   stop them
+toggle gmcp        GMCP itself
+toggle gmcp room   the map data
 ```
 
-`help commands/toggle/map` in game says the same.
+Each toggle switches its setting and says whether it is now on; both are remembered when you
+log in again. Mudlet has GMCP switched on by default.
+
+GMCP is the way to use it. The game also tells the mapper which room each exit leads to, once
+that room is known, so walking through an area once connects the rooms you have visited, not
+only the steps you took between them.
+
+A client without GMCP can get the same data as a line of text on every move instead, which
+this package reads and hides. It carries no exit destinations, so it maps less:
+
+```
+toggle map on    the text line; with GMCP on as well, the game uses GMCP
+toggle map off   stop it
+```
 
 Not every area is mapped: the administrators open them one at a time.
 
@@ -93,7 +107,8 @@ into it. `maphelp share` says the same in the client.
 
 ## Using it with another MUD
 
-The `!NMAP` trigger is only an adapter. The integration point is one function:
+The GMCP handler and the `!NMAP` trigger are only adapters. The integration point is one
+function:
 
 ```lua
 elro.onRoom(id, fromId, dir, name, area, exits, terr)
@@ -110,8 +125,9 @@ elro.onRoom(id, fromId, dir, name, area, exits, terr)
 | `terr` | comma-separated terrain tokens, most specific first; may be `""` |
 
 Call that on every move and the rest works. Nothing else in the client knows where the data
-came from, so wiring up GMCP, MSDP or another out-of-band line is a trigger and a mapping of
-field names. `analysis/test_onroom.lua` drives it exactly this way.
+came from, so another protocol such as MSDP is a handler and a mapping of field names;
+`elro.gmcp_room` in `lua/core.lua` is the GMCP one. `analysis/test_onroom.lua` drives it
+exactly this way.
 
 Two requirements on `id`: it must be stable across sessions, and it must never be **reused**
 for a different room — the client treats a repeated id as the same place.

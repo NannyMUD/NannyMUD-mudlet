@@ -281,6 +281,64 @@ do
 end
 elro.current = nil
 
+-- ---- declared exits (GMCP): linked once both rooms are on the map ----------------
+reset_map()
+local a13 = addAreaName("mistral")
+addRoom(20) ; setRoomArea(20, a13) ; setRoomCoordinates(20, 5, 5, 0) ; setRoomUserData(20, "sarea", "mistral")
+elro.cs_reset() ; elro.dirty = {} ; elro.declWait = {} ; elro.smap = {}
+-- 21 declares north to 22, not seen yet, and east to 20, which is on the map
+elro.onRoom(21, 0, "none", "a meadow", "mistral", "north,east,west", "", nil, nil,
+            { north = 22, east = 20 })
+eq(getRoomExits(21)["east"], 20, "a declared exit to a room on the map is linked at once")
+eq(getRoomUserData(21, "assumed_east"), "", "...and counts as observed")
+eq(getRoomExits(21)["north"], elro.FRONTIER_ROOM, "a declared exit to a room not seen yet stays a stub")
+eq(elro.declWait[22] and elro.declWait[22]["21:north"], true, "...it waits for that room")
+-- 22 arrives by teleport: the waiting declaration links it, though nobody walked it
+elro.onRoom(22, 0, "none", "a hill", "mistral", "south", "", nil, nil, {})
+eq(getRoomExits(21)["north"], 22, "the room it waited for arrives: the exit is linked")
+eq(elro.declWait[22], nil, "...and no longer waits")
+eq(elro.dirty[a13], true, "...and the area is marked for a relayout")
+-- an observed edge to another room is not overwritten by a declaration
+setExit(20, 21, "west")
+elro.onRoom(20, 0, "none", "the meadows", "mistral", "west", "", nil, nil, { west = 22 })
+eq(getRoomExits(20)["west"], 21, "an observed edge wins over a declaration")
+-- a named exit becomes a special exit, recorded without a message
+elro.onRoom(22, 0, "none", "a hill", "mistral", "south,church", "", nil, nil, { church = 20 })
+eq(elro.smap["22:20"], "church", "a declared named exit is recorded as a special exit")
+
+-- a room mapped without declarations (before GMCP) gets the reverse as an assumed edge
+reset_map()
+local a15 = addAreaName("mistral")
+addRoom(30) ; setRoomArea(30, a15) ; setRoomCoordinates(30, 5, 5, 0) ; setRoomUserData(30, "sarea", "mistral")
+setRoomUserData(30, "xcomp", "north,south")
+addRoom(32) ; setRoomArea(32, a15) ; setRoomCoordinates(32, 9, 9, 0) ; setRoomUserData(32, "sarea", "mistral")
+elro.cs_reset() ; elro.dirty = {} ; elro.declWait = {} ; elro.smap = {}
+elro.onRoom(31, 0, "none", "a meadow", "mistral", "south,east", "", nil, nil,
+            { south = 30, east = 32 })
+eq(getRoomExits(30)["north"], 31, "the other room advertises the reverse: it is added")
+eq(getRoomUserData(30, "assumed_north"), "1", "...as an assumed edge")
+eq(getRoomExits(32)["west"], nil, "a room with no known exit list gets no reverse")
+elro.onRoom(30, 0, "none", "a meadow", "mistral", "north,south", "", nil, nil, { north = 33 })
+eq(getRoomExits(30)["north"], 31, "its own declaration to an unseen room keeps the edge until that room exists")
+elro.onRoom(33, 0, "none", "a ridge", "mistral", "", "", nil, nil, {})
+eq(getRoomExits(30)["north"], 33, "...then replaces the assumed reverse")
+eq(getRoomUserData(30, "assumed_north"), "", "...as observed")
+
+-- through the GMCP path: 0 and the room itself are not declarations
+reset_map()
+local a14 = addAreaName("mistral")
+addRoom(20) ; setRoomArea(20, a14) ; setRoomCoordinates(20, 5, 5, 0) ; setRoomUserData(20, "sarea", "mistral")
+elro.cs_reset() ; elro.dirty = {} ; elro.declWait = {} ; elro.smap = {}
+elro.current = nil
+gmcp = { Room = { Info = { num = 23, from = 0, cmd = "", name = "the meadows", area = "mistral",
+  exits = { south = 0, west = 23, east = 20 }, terrain = { "grass" } } } }
+elro.gmcp_room()
+eq(getRoomExits(23)["east"], 20, "gmcp: a declared id on the map is linked")
+eq(getRoomExits(23)["west"], elro.FRONTIER_ROOM, "gmcp: a room declaring itself is ignored, a stub")
+eq(elro.declWait[0], nil, "gmcp: 0 is no destination, nothing waits for it")
+gmcp = nil
+elro.current = nil
+
 cecho = realcecho
 print(string.format("test_onroom: %d check(s), %d failure(s)", checks, fail))
 os.exit(fail == 0 and 0 or 1)

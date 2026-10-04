@@ -199,6 +199,60 @@ eq(room[2], 50, "strict off: nothing in flight still draws the exit")
 elro.current = nil
 reset_map()
 
+-- compact prompts: a burst shows only its last prompt
+local gagged = 0
+deleteLine = function() gagged = gagged + 1 end
+elro.promptsOn = true
+local function prompts(n) gagged = 0 ; for _ = 1, n do elro.on_prompt() end return gagged end
+clock = 5000
+elro.sentQ = {}
+elro.sent_push("n") ; elro.sent_push("e") ; elro.sent_push("crawl se")
+eq(prompts(3), 2, "a burst of three: the first two prompts are hidden")
+eq(#elro.sentQ, 0, "...and the queue is empty")
+elro.sent_push("look")
+eq(prompts(1), 0, "a single command: its prompt is shown")
+elro.sent_push("password")              -- never answered by a prompt
+clock = clock + 3000
+elro.sent_push("look")
+eq(prompts(1), 0, "an unanswered command seconds earlier does not hide the next prompt")
+elro.sentQ = {}
+elro.promptsOn = false
+elro.sent_push("n") ; elro.sent_push("e")
+eq(prompts(2), 0, "mapprompts off: every prompt shown")
+elro.promptsOn = true
+deleteLine = nil
+elro.sentQ = {}
+
+-- GMCP: Room.Info carries the same move; exits by name, sorted; terrain a list
+elro.current = nil
+room, off = nil, nil
+gmcp = { Room = { Info = { num = 36, from = 35, cmd = "crawl se", name = "in the forest",
+  area = "elrohir", exits = { se = -1, n = 35, church = -1 }, terrain = { "forest", "outdoors" } } } }
+elro.gmcp_room()
+eq(room[1], 36, "gmcp: num is the id")
+eq(room[2], 35, "...from")
+eq(room[3], "crawl se", "...dir")
+eq(room[4], "in the forest", "...name")
+eq(room[5], "elrohir", "...area")
+eq(room[6], "church,n,se", "...exits by name, sorted")
+eq(room[7], "forest,outdoors", "...the terrain list")
+room = nil
+gmcp.Room.Info = { num = 37, name = "x", area = "a", exits = {} }
+elro.gmcp_room()
+eq(room[2], 0, "gmcp: no from is a jump")
+eq(room[6], "", "...no exits, the empty string")
+eq(room[7], "", "...no terrain, the empty string")
+room, off = nil, nil
+gmcp.Room.Info = { num = -1, from = 12, cmd = "west", name = "", area = "", exits = {} }
+elro.gmcp_room()
+eq(room, nil, "gmcp: num -1 is not a room")
+eq(off[1], 12, "...it is the off-map marker, with from")
+room, off = nil, nil
+gmcp = nil
+elro.gmcp_room()
+eq(room, nil, "gmcp: no table, nothing")
+eq(off, nil, "...at all")
+
 -- the package: both tags, the dark line, and no handshake left
 local function slurp(p) local f = io.open(p, "rb") ; local s = f:read("*a") ; f:close() ; return s end
 local xml, core = slurp("map_helper.xml"), slurp("lua/core.lua")

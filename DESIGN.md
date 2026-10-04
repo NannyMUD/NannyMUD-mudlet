@@ -190,6 +190,41 @@ room the client never put the player in: `nmp_line` treats any such `from` as
 exact line "A dark room.", which calls `elro.offgrid()`; the map side knows
 nothing of the text, so another mud changes only that trigger.
 
+**Compact prompts (2026-10-02).** Since the driver sends GA, Mudlet ends the line
+at every prompt, so a speedwalk or a multi-command alias prints one prompt line per
+command where the prompts used to run into the next output. The client already
+keeps the commands sent and not yet answered (`sentQ`, one GA prompt each), so the
+prompt trigger hides a prompt when the next queued command belongs to the same
+burst, and the last prompt stays. A burst is commands sent within a second of each
+other: a command that never gets a prompt of its own (a password, a pager answer)
+would otherwise leave the queue one behind and hide the prompt of the next command
+typed. `mapprompts off` shows them all. A server alias that expands into several
+commands sends one line and gets several prompts, which this cannot see; the
+general fix is a server that prompts only when its input buffer is empty.
+
+**GMCP (draft, 2026-10-02).** The driver has GMCP; a player who turns it on gets the
+move as `Room.Info` in place of the text line, never both. `gmcp_room` maps it onto
+the same fields and calls `nmp_room`, so both transports share every rule above.
+The server's form (beta, 2026-10-03): one `Room.Info` carrying `num`, `name`,
+`area`, `from`, `cmd` (the command, the text line's `dir`), a `terrain` list and
+`environment` (its first entry, the standard key). Only `gmcp_room` knows these
+names.
+
+**Declared exits.** `exits` maps each obvious exit to a room id when the server can
+name it without running anything: a plain path, no check function, a room already
+registered. Otherwise `0`. Such an exit is what walking it would show, so
+`decl_apply` links it as an observed edge as soon as both rooms are on the map, and
+keeps one whose target the client has not seen in `elro.declWait` (map user data
+`elro.decl`) until that room appears. It never creates a room, never overwrites an
+observed edge to another room or a locked one, and ignores a room naming itself
+(the meadows send `west` to their own id). A named exit becomes a special exit with
+the name as its command. A compass link also adds its reverse as an assumed edge,
+as a walked move does, when the other room lists that exit and has only a stub
+there; this matters for rooms mapped before GMCP, whose own declarations the client
+has never received. A room with no stored exit list gets no reverse. An edge removed with `mapdeledge` comes back the next time
+its room declares it. The client asks for the
+`Room` package on `sysProtocolEnabled`, since that is what the server gates on.
+
 **The command fence (`!MAPSEQ`) is gone** (1.5.0, 2026-09-23): the server
 reads the typed command from the driver itself now, so `onSeq`, `fence_take`,
 the `seq auto` handshake line and the fence trigger are removed. The

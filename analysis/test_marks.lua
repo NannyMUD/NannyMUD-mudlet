@@ -92,7 +92,8 @@ eq(walked, 2, "typing the word walks to the mark")
 -- second walk is asked for, so it must plan from the first walk's destination.
 elro.gotoRoom = realGoto
 local sent = {}
-send = function(s) sent[#sent + 1] = s end
+local echoed = 0
+send = function(s, show) sent[#sent + 1] = s ; if show ~= false then echoed = echoed + 1 end end
 getPath = function(a, b)                        -- the straight corridor 1-2-3
   if a == b then return false end
   local step = a < b and 1 or -1
@@ -109,6 +110,8 @@ getRoomName = function(id) return "room " .. id end
 -- the whole walk goes out at once; the !NMPs only say where it got to
 elro.cmd_return("shop")
 eq(table.concat(sent, " "), "east east", "first walk, 1 to 3: sent whole")
+eq(echoed, 0, "...without Mudlet's echo of each command")
+eq(said[#said]:find("walking: east, east", 1, true) ~= nil, true, "...named on one line instead")
 eq(elro.walkTarget, 3, "...and its destination is remembered")
 -- 'mapmark here;shop;sell;mapreturn' on one line: the second walk is planned from
 -- the first's end and goes out at once, so it keeps its place in the order typed
@@ -136,8 +139,9 @@ elro.current = 9 ; elro.walk_seen(9)             -- a !NMP for a room off the pa
 eq(elro.walkQueue, nil, "pushed off the path: the walk is over")
 eq(said[#said]:find("stopped short", 1, true) ~= nil, true, "...and it says so")
 -- a walk that halts (a closed door): no !NMP, no word; a second later it no longer counts
-elro.current = 1 ; sent = {} ; said = {}
+elro.current = 1 ; sent = {}
 elro.cmd_return("shop")
+said = {}                                        -- after the walk's own 'walking:' line
 elro.current = 2 ; elro.walk_seen(2)
 eq(#said, 0, "halted: nothing is said")
 eq(elro.walk_busy(), true, "...but it still counts as running")

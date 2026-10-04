@@ -8,9 +8,9 @@ elro = elro or {}
 elro.current = elro.current or nil
 elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
--- Reported to the server by the handshake in onRoom. Kept in step with config.lua's
--- `version` by tools/build-package.sh, which refuses to build if the two differ.
-elro.VERSION = "3.0.0"
+-- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
+-- which refuses to build if the two differ.
+elro.VERSION = "0.5.0"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -4424,7 +4424,45 @@ function elro.sent_push(text)
 end
 
 function elro.sent_pop()
-  table.remove(elro.sentQ, 1)
+  return table.remove(elro.sentQ, 1)
+end
+
+-- A burst (a speedwalk, an alias or key sending several commands) shows only its
+-- last prompt. Two commands sent within promptBurstMs are one burst, so a command
+-- that never got its own prompt cannot hide the prompt of the next one typed.
+elro.promptBurstMs = 1000
+
+function elro.prompts_on()
+  if elro.promptsOn == nil then
+    elro.promptsOn = true
+    if type(getMapUserData) == "function" then
+      local ok, s = pcall(getMapUserData, "elro.prompts")
+      elro.promptsOn = not (ok and s == "off")
+    end
+  end
+  return elro.promptsOn
+end
+
+function elro.on_prompt()
+  local h, nxt = elro.sent_pop(), elro.sentQ[1]
+  if h and nxt and nxt.at - h.at <= elro.promptBurstMs and elro.prompts_on()
+     and type(deleteLine) == "function" then
+    deleteLine()
+  end
+end
+
+-- mapprompts [on|off]
+function elro.cmd_prompts(arg)
+  arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  if arg == "on" or arg == "off" then
+    elro.promptsOn = (arg == "on")
+    if type(setMapUserData) == "function" then
+      pcall(setMapUserData, "elro.prompts", elro.promptsOn and "" or "off")
+    end
+  end
+  cecho(elro.prompts_on()
+    and "\n<cyan>[elro]: a burst of commands shows only its last prompt. 'mapprompts off' shows them all.\n<reset>"
+    or  "\n<cyan>[elro]: every prompt is shown. 'mapprompts on' hides all but the last of a burst.\n<reset>")
 end
 
 -- A server that sends only the verb ("crawl") gets the typed arguments back
@@ -4487,7 +4525,7 @@ if type(registerAnonymousEventHandler) == "function" then
 end
 if type(tempPromptTrigger) == "function" then
   if elro._sentP and type(killTrigger) == "function" then pcall(killTrigger, elro._sentP) end
-  elro._sentP = tempPromptTrigger(function() elro.sent_pop() end)
+  elro._sentP = tempPromptTrigger(function() elro.on_prompt() end)
 end
 
 -- mapupdate [file]: replace this package with the newest release, in one command.
@@ -4597,7 +4635,12 @@ function elro.nmp_fields(text)
 end
 
 function elro.nmp_line(text)
-  local f = elro.nmp_fields(text)
+  elro.nmp_room(elro.nmp_fields(text))
+end
+
+-- One move, from either transport: the fields as the text line names them, strings or
+-- numbers alike.
+function elro.nmp_room(f)
   local id, from = tonumber(f.id), tonumber(f.from)
   if not id then return end
   f.dir = elro.amend_dir(f.dir)
@@ -4620,7 +4663,156 @@ function elro.nmp_line(text)
     if elro.onOff then elro.onOff(from or 0, f.dir) end
     return
   end
-  elro.onRoom(id, from, f.dir, f.name, f.area, f.exits, f.terr, f.mha, f.mh)
+  elro.onRoom(id, from, f.dir, f.name, f.area, f.exits, f.terr, f.mha, f.mh, f.decl)
+end
+
+-- The same move over GMCP: Room.Info with from, cmd and a terrain list. Exits are taken
+-- by name only, sorted, since a JSON object has no order.
+function elro.gmcp_room()
+  local t = type(gmcp) == "table" and type(gmcp.Room) == "table" and gmcp.Room.Info
+  if type(t) ~= "table" then return end
+  local ex, decl = {}, {}
+  if type(t.exits) == "table" then
+    for d, to in pairs(t.exits) do
+      ex[#ex + 1] = d
+      -- 0 is an unknown destination; a room declaring itself is ignored
+      to = tonumber(to)
+      if to and to > 0 and to ~= tonumber(t.num) then decl[elro.norm(d)] = to end
+    end
+  end
+  table.sort(ex)
+  elro.nmp_room({ id = t.num, from = t.from or 0, dir = t.cmd, name = t.name, area = t.area,
+                  exits = table.concat(ex, ","), decl = decl,
+                  terr = type(t.terrain) == "table" and table.concat(t.terrain, ",") or "" })
+end
+
+-- ---- declared exits ----------------------------------------------------------
+-- An exit the server names with a destination (a plain path, no check function) is
+-- linked once both rooms are on the map. It counts as observed: it is what walking it
+-- would show. One whose target the client has not seen waits in elro.declWait, kept in
+-- the map: target -> { "src:dir" = true }.
+
+function elro.load_decl()
+  elro.declWait = {}
+  if type(getMapUserData) ~= "function" then return end
+  local ok, s = pcall(getMapUserData, "elro.decl")
+  if not ok or type(s) ~= "string" then return end
+  for to, src, dir in s:gmatch("(%d+)\t(%d+)\t([^\n]+)") do
+    to = tonumber(to)
+    elro.declWait[to] = elro.declWait[to] or {}
+    elro.declWait[to][src .. ":" .. dir] = true
+  end
+end
+
+function elro.save_decl()
+  if type(setMapUserData) ~= "function" then return end
+  local parts = {}
+  for to, set in pairs(elro.declWait or {}) do
+    for k in pairs(set) do
+      local src, dir = k:match("^(%d+):(.+)$")
+      parts[#parts + 1] = to .. "\t" .. src .. "\t" .. dir
+    end
+  end
+  table.sort(parts)
+  pcall(setMapUserData, "elro.decl", table.concat(parts, "\n"))
+end
+
+-- Link src -dir-> to as a declared exit; true when the graph changed. Never over an
+-- observed edge to another room (first writer wins) or a locked one.
+function elro.decl_link(src, dir, to, touched)
+  if elro.dirNum[dir] then
+    local old = (getRoomExits(src) or {})[dir]
+    local assumed = getRoomUserData(src, "assumed_" .. dir) == "1"
+    local manual = getRoomUserData(src, "manual_" .. dir)
+    local forward = not (old == to and not assumed)
+      and not (old and old ~= to and old ~= elro.FRONTIER_ROOM and not assumed)
+      and not (manual and manual ~= "" and old and old ~= to)
+    if forward then
+      if old ~= to then setExit(src, to, dir) end
+      if assumed then setRoomUserData(src, "assumed_" .. dir, "") end
+      elro.stub_apply(src)
+    end
+    -- The reverse as a walked move adds it: assumed, only into a stub or an empty
+    -- slot, and only when the other room advertises that exit. Its own declaration
+    -- replaces it later if it says otherwise.
+    local rev = elro.reverse[dir]
+    local rold = rev and (getRoomExits(to) or {})[rev]
+    local xc = rev and (getRoomUserData(to, "xcomp") or "") or ""
+    local reverse = rev and (not rold or rold == elro.FRONTIER_ROOM)
+      and xc ~= "" and elro.advertises(xc, rev)
+    if reverse then
+      setExit(to, src, rev)
+      setRoomUserData(to, "assumed_" .. rev, "1")
+      elro.stub_apply(to)
+    end
+    if not forward and not reverse then return false end
+  else
+    if elro.smap == nil then elro.load_smap() end
+    local key = src .. ":" .. to
+    if elro.smap[key] or elro.has_special(src, to) then return false end
+    elro.smap[key] = dir
+    elro.smap_index_dirty()
+    if type(addSpecialExit) == "function" then pcall(addSpecialExit, src, to, dir) end
+    elro._declSmap = true
+    elro.glyph_room(src)
+  end
+  touched[src] = true ; touched[to] = true
+  for _, r in ipairs({ src, to }) do
+    local a = getRoomArea(r)
+    if a and a > 0 then elro.dirty[a] = true ; elro.cs_bump(a) end
+  end
+  return true
+end
+
+-- This room's declarations, and the ones that were waiting for it.
+function elro.decl_apply(id, decl, touched)
+  if elro.declWait == nil then elro.load_decl() end
+  local changed, waitDirty = false, false
+  local dirs = {}
+  for d in pairs(decl or {}) do dirs[#dirs + 1] = d end
+  table.sort(dirs)
+  for _, d in ipairs(dirs) do
+    local to = decl[d]
+    if roomExists(to) then
+      if elro.decl_link(id, d, to, touched) then changed = true end
+    else
+      elro.declWait[to] = elro.declWait[to] or {}
+      if not elro.declWait[to][id .. ":" .. d] then
+        elro.declWait[to][id .. ":" .. d] = true ; waitDirty = true
+      end
+    end
+  end
+  local waiting = elro.declWait[id]
+  if waiting then
+    local keys = {}
+    for k in pairs(waiting) do keys[#keys + 1] = k end
+    table.sort(keys)
+    for _, k in ipairs(keys) do
+      local src, d = k:match("^(%d+):(.+)$")
+      src = tonumber(src)
+      if src and roomExists(src) and elro.decl_link(src, d, id, touched) then changed = true end
+    end
+    elro.declWait[id] = nil ; waitDirty = true
+  end
+  if waitDirty then elro.save_decl() end
+  if elro._declSmap then elro._declSmap = nil ; elro.save_smap() end
+  return changed
+end
+
+-- The server sends Room.Info only to a client that asked for the Room package.
+function elro.gmcp_hello()
+  if type(sendGMCP) == "function" then pcall(sendGMCP, 'Core.Supports.Add ["Room 1"]') end
+end
+
+if type(registerAnonymousEventHandler) == "function" then
+  for _, k in ipairs({ "_gmcpRoomH", "_gmcpOnH" }) do
+    if elro[k] and type(killAnonymousEventHandler) == "function" then
+      pcall(killAnonymousEventHandler, elro[k])
+    end
+  end
+  elro._gmcpRoomH = registerAnonymousEventHandler("gmcp.Room.Info", function() elro.gmcp_room() end)
+  elro._gmcpOnH = registerAnonymousEventHandler("sysProtocolEnabled",
+    function(_, proto) if proto == "GMCP" then elro.gmcp_hello() end end)
 end
 
 -- The player is somewhere the map cannot show; nothing is recorded about how.
@@ -4628,7 +4820,7 @@ function elro.offgrid()
   elro.onOff(0)
 end
 
-function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
+function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
   if not id then return end
   elro.offmap = nil            -- any mapped room ends an excursion off the map
   local _pfTotal
@@ -4856,6 +5048,8 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh)
     -- (0,0), which a relayout normalises TO, so it is usually on top of another room.
     collided = true
   end
+  -- 3b. exits the server declares with a destination, linked when both rooms exist
+  if elro.decl_apply(id, decl, touched) then changed = true end
   -- finalize an in-progress maprecordmove, but only if this move is the one
   -- that was armed; a move the mapper never saw (move_object) leaves
   -- elro.current stale, so a mismatch abandons the recording loudly.
@@ -5209,7 +5403,11 @@ function elro.walk_steps(dirs, path, from)
   end
   elro.walkTarget, elro.walkLast = steps[#steps].to, elro.now_ms()
   for _, st in ipairs(steps) do if st.to then elro.walkPath[st.to] = true end end
-  for _, st in ipairs(steps) do for _, cmd in ipairs(st.cmds) do send(cmd) end end
+  -- One line naming the commands in place of Mudlet's echo of each.
+  local all = {}
+  for _, st in ipairs(steps) do for _, cmd in ipairs(st.cmds) do all[#all + 1] = cmd end end
+  cecho("\n<cyan>[elro]: walking: " .. table.concat(all, ", ") .. "\n<reset>")
+  for _, cmd in ipairs(all) do send(cmd, false) end
 end
 
 -- Is a walk still running: sent, not arrived, and its !NMPs still coming. A burst
@@ -5269,7 +5467,6 @@ function doSpeedWalk()
   if type(speedWalkDir) ~= "table" or #speedWalkDir == 0 then
     cecho("\n<yellow>[elro]: no path to that room.\n<reset>") return
   end
-  cecho(string.format("\n<cyan>[elro]: walking %d step(s).\n<reset>", #speedWalkDir))
   elro.walk_steps(speedWalkDir, speedWalkPath)
 end
 
@@ -5484,12 +5681,16 @@ function elro.delete_edge(from, to)
     end
   end
   if type(removeSpecialExit) == "function" then
+    -- Mudlet removes a special exit by its command, not its destination.
     for _, e in ipairs(elro.special_list(from)) do
       if e.to == to then
-        pcall(removeSpecialExit, from, to)
+        pcall(removeSpecialExit, from, e.cmd)
         removed = removed + 1
         cecho(string.format("\n<green>[elro]: removed %d -[special '%s']-> %d<reset>\n", from, e.cmd, to))
       end
+    end
+    if elro.has_special(from, to) then
+      cecho(string.format("\n<red>[elro]: Mudlet kept a special exit %d -> %d; delete it in the map editor.<reset>\n", from, to))
     end
   end
   if elro.smap == nil then elro.load_smap() end
@@ -5534,7 +5735,7 @@ function elro.delete_room(id)
       if type(removeSpecialExit) == "function" then
         for _, e in ipairs(elro.special_list(rid)) do
           if e.to == id then
-            pcall(removeSpecialExit, rid, id)
+            pcall(removeSpecialExit, rid, e.cmd)
             local ra = getRoomArea(rid)
             if ra then dirty[ra] = true end
           end
@@ -5588,6 +5789,7 @@ local HELP_BASIC = {
   { "mapavoid [id,...|sel]", "keep speedwalks out of a room (bare = the one you are in): a death trap, an aggressive monster. The same as 'Lock' in the map's right-click menu" },
   { "mapunavoid [id,...|sel]", "let speedwalks use it again   (mapavoids = list them)" },
   { "mapsearch <text>",  "find rooms whose name, or whose area's name, contains the text (any case); lists them with the ids 'mapgoto' takes" },
+  { "mapprompts [on|off]", "when one action sends several commands at once (a speedwalk, an alias, a key), show only the last prompt. On by default" },
 
   { "FIXING THE MAP -- changes rooms, exits or areas" },
   { "mapwipe [area] [confirm]", "delete the whole map, or every room the SERVER put in one area; without 'confirm' it only reports what it would delete" },
@@ -5681,8 +5883,8 @@ local HELP_SHARE = {
   "",
   "The file carries everything: rooms, exits, the special exits you recorded, terrain, merges, "
     .. "folds and the rooms speedwalks keep out of. Only the map window's size and corner "
-    .. "belong to the profile. The receiving profile needs this package too, and 'toggle map on' "
-    .. "in the game to keep mapping.",
+    .. "belong to the profile. The receiving profile needs this package too, and 'toggle gmcp' "
+    .. "and 'toggle gmcp room' in the game to keep mapping.",
   "",
   "A map shows where you have been. Handing one over hands over that exploring.",
 }
@@ -5731,8 +5933,9 @@ function elro.map_help(arg)
         .. (adv and "advanced commands" or "everyday commands") .. "\n")
   -- two help systems, and a new player cannot tell which is which
   for _, l in ipairs(elro.wrap_text("These commands belong to this Mudlet package and are never "
-      .. "sent to the game. The game's own side is 'toggle map on' and 'toggle map off', "
-      .. "which switch the map tags on and off.", width - 3)) do
+      .. "sent to the game. The game's own side is 'toggle gmcp' and 'toggle gmcp room', "
+      .. "which switch the map data on; 'toggle map on' is the text-line fallback for "
+      .. "clients without GMCP.", width - 3)) do
     cecho("<cyan>  " .. l .. "<reset>\n")
   end
   emit(adv and HELP_ADV or HELP_BASIC)
@@ -5813,7 +6016,7 @@ function elro.map_wipe(arg)
       if type(removeSpecialExit) == "function" then
         for _, e in ipairs(elro.special_list(rid)) do
           if scope[e.to] then
-            pcall(removeSpecialExit, rid, e.to)
+            pcall(removeSpecialExit, rid, e.cmd)
             local ra = getRoomArea(rid) ; if ra then dirty[ra] = true end
           end
         end
