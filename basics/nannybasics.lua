@@ -8,6 +8,7 @@
 
 NannyBasics = NannyBasics or {}
 local N = NannyBasics
+N.VERSION = "0.7.0"
 
 -- The source on disk wins over the copy built into the package (development only).
 N.SRC = N.SRC or ""
@@ -725,11 +726,16 @@ function N.guild(name, v)
       paren(d - t, d - t > 0 and "#70c070" or "#d06060") .. paren(t, "#6fb8e0")
   end
   local st, sk = type(g.stack) == "table" and g.stack or {}, type(g.soultick) == "table" and g.soultick or {}
+  -- growth since the soulmark as the game's 'soultick' shows it: total, then per (combat) beat
+  local gp, hb, chb = tonumber(sk.guild_points) or 0, tonumber(sk.hb) or 0, tonumber(sk.combat_hb) or 0
+  local tick = commas(gp) .. " gp"
+  if hb > 0 then tick = tick .. " &#183; " .. commas(math.floor(gp / hb)) .. " per beat" end
+  if chb > 0 then tick = tick .. " &#183; " .. commas(math.floor(gp / chb)) .. " per combat beat" end
   local H = "color:#e0b64a; font-weight:bold;"
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Active</td><td>%s</td></tr>" ..
-    "<tr><td style='%s'>Soultick</td><td>%s gp &#183; %s beats (%s in combat)</td></tr>" ..
+    "<tr><td style='%s'>Soultick</td><td>%s</td></tr>" ..
     "</table>" ..
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
     "<tr><td style='%s'>Str</td><td align='right'>%s</td><td width='16'></td><td style='%s'>Int</td><td align='right'>%s</td></tr>" ..
@@ -740,7 +746,7 @@ function N.guild(name, v)
     "<tr><td style='%s'>Stack</td><td>%d/%s &#183; %s</td></tr>" ..
     "</table>",
     H, list(g.active, "none"),
-    H, esc(sk.guild_points or 0), esc(sk.hb or 0), esc(sk.combat_hb or 0),
+    H, tick,
     H, stat("str"), H, stat("int"), H, stat("dex"), H, stat("con"),
     H, #st, esc(g.stack_size or "?"), list(st, "empty")))
 end
@@ -778,7 +784,106 @@ function N.register()
   -- resize is handled by the border coordinator, which repositions every owner's panes.
 end
 
--- nanny [log | hello | reload | place <what> <where> | layout]
+-- ================= updating =======================================================
+-- 'nanny update' downloads the newest release FIRST and swaps only once it is on disk, so a
+-- failed download changes nothing. The swap runs from timers: the alias belongs to the package
+-- being removed, but functions and timers live on in the Lua state. Same shape as mapupdate.
+N.REPO = "NannyMUD/NannyMUD-mudlet"
+N.UPDATE_URL = "https://github.com/" .. N.REPO .. "/releases/latest/download/NannyBasics.xml"
+
+function N.update_swap(path)
+  if N._updBusy then return end
+  N._updBusy = true
+  local function installed()
+    if type(getPackages) ~= "function" then return true end
+    for _, p in ipairs(getPackages() or {}) do if p == "NannyBasics" then return true end end
+    return false
+  end
+  local function try(left)
+    local ok, err = pcall(installPackage, path)
+    if ok and installed() then
+      N._updBusy = nil
+      cecho("<green>[nanny]: updated.\n<reset>")
+    elseif left > 0 then
+      tempTimer(2, function() try(left - 1) end)
+    else
+      N._updBusy = nil
+      cecho("\n<red>[nanny]: the install failed" .. (ok and "" or ": " .. tostring(err)) ..
+            ".\n  Drag " .. path .. " onto Mudlet to finish by hand.\n<reset>")
+    end
+  end
+  tempTimer(0.1, function()
+    pcall(uninstallPackage, "NannyBasics")
+    tempTimer(1, function() try(1) end)
+  end)
+end
+
+-- Download url to <profile>/nanny_update/<name>, then call done(path), or fail(why).
+local function fetch(name, url, done, fail)
+  local dir = getMudletHomeDir() .. "/nanny_update"
+  if lfs and lfs.mkdir then pcall(lfs.mkdir, dir) end
+  local path = dir .. "/" .. name
+  os.remove(path)
+  local hd, he
+  hd = registerAnonymousEventHandler("sysDownloadDone", function(_, file)
+    if file ~= path then return end
+    pcall(killAnonymousEventHandler, hd) ; pcall(killAnonymousEventHandler, he)
+    done(path)
+  end)
+  he = registerAnonymousEventHandler("sysDownloadError", function(_, why, file)
+    if file and file ~= path then return end
+    pcall(killAnonymousEventHandler, hd) ; pcall(killAnonymousEventHandler, he)
+    if fail then fail(why) end
+  end)
+  downloadFile(path, url)
+end
+
+function N.update()
+  local now = os.time()
+  if N._updAt and now - N._updAt < 30 then return end
+  N._updAt = now
+  if type(installPackage) ~= "function" or type(uninstallPackage) ~= "function"
+     or type(downloadFile) ~= "function" then
+    say("this Mudlet cannot update packages from a script. Get the new one by hand:\n  " .. N.UPDATE_URL)
+    return
+  end
+  say("downloading the newest NannyBasics...")
+  -- the file name is the package name to Mudlet
+  fetch("NannyBasics.xml", N.UPDATE_URL, N.update_swap, function(why)
+    cecho("\n<red>[nanny]: the download failed (" .. tostring(why) .. "). Nothing was changed.\n<reset>")
+  end)
+end
+
+-- "0.10.2" > "0.9.9": compared part by part as numbers
+local function newer(a, b)
+  local pa, pb = {}, {}
+  for n in tostring(a):gmatch("%d+") do pa[#pa + 1] = tonumber(n) end
+  for n in tostring(b):gmatch("%d+") do pb[#pb + 1] = tonumber(n) end
+  for i = 1, math.max(#pa, #pb) do
+    local x, y = pa[i] or 0, pb[i] or 0
+    if x ~= y then return x > y end
+  end
+  return false
+end
+N.newer = newer
+
+-- Once per session: ask GitHub for the latest release and say so if it is newer. Silent when up
+-- to date and on any error.
+function N.check_latest()
+  if type(downloadFile) ~= "function" or type(yajl) ~= "table" then return end
+  fetch("latest.json", "https://api.github.com/repos/" .. N.REPO .. "/releases/latest", function(path)
+    local f = io.open(path, "r") ; if not f then return end
+    local body = f:read("*a") ; f:close()
+    local ok, t = pcall(yajl.to_value, body)
+    local tag = ok and type(t) == "table" and t.tag_name
+    if type(tag) == "string" and newer(tag, N.VERSION) then
+      cecho(string.format("\n<yellow>[nanny]: NannyBasics %s is out (you have %s). Type 'nanny update'.\n<reset>",
+        (tag:gsub("^v", "")), N.VERSION))
+    end
+  end)
+end
+
+-- nanny [log | hello | reload | update | place <what> <where> | layout]
 function N.cmd(arg)
   arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local verb, rest = arg:match("^(%S+)%s*(.*)$")
@@ -796,6 +901,8 @@ function N.cmd(arg)
       parts[#parts + 1] = nm .. "=" .. tostring(cell or "hidden")
     end
     say("layout: " .. table.concat(parts, ", ") .. (N.logOn and "  (log shown)" or "  (log hidden)"))
+  elseif arg == "update" then
+    N.update()
   elseif arg == "hello" then
     N.hello()
     say("asked the game for: " .. table.concat(N.WANT, ", "))
@@ -823,7 +930,8 @@ function N.cmd(arg)
         "\n  edge to split it, or to an empty window edge. Drag the thin bars to resize." ..
         "\n  'nanny place <comp> <cell>' also moves a pane; 'nanny reset' restores the default." ..
         "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
-        "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks.")
+        "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
+        "\n  'nanny update' installs the newest release. This is NannyBasics " .. N.VERSION .. ".")
   end
 end
 
@@ -854,4 +962,9 @@ N.register()
 if N.alias then killAlias(N.alias) end
 N.alias = tempAlias("^nanny(?:\\s+(.+))?$", function() N.cmd(matches[2]) end)
 if type(gmcp) == "table" then N.hello() end
-say("loaded. Type 'nanny' for commands.")
+say("NannyBasics " .. N.VERSION .. " loaded. Type 'nanny' for commands.")
+-- once per session, not on every reload; a few seconds in, after the profile has settled
+if not N._checked and type(tempTimer) == "function" then
+  N._checked = true
+  tempTimer(5, function() pcall(N.check_latest) end)
+end

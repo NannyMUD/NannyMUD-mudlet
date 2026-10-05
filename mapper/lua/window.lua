@@ -132,6 +132,9 @@ local function can_embed()
 end
 
 local function build()
+  -- Mudlet's own map window holds the profile's one map widget, and an older version (or the
+  -- Map button) may have left it open across a mapupdate; ours would then stay blank.
+  if type(closeMapWidget) == "function" then pcall(closeMapWidget) ; elro._dockOpen = false end
   if not can_embed() then return false end
   elro.miniLeft = saved_left()
   quietly(function()
@@ -301,6 +304,9 @@ function elro.mapwin_dock(arg)
     if box.minimized then box:restore() end
     box:lockContainer("full")
   end)
+  -- the box restores its own saved state, hidden included; record it shown so a restore that
+  -- lands after this (seen at start-up) does not hide the docked map
+  pcall(function() box:save() end)
   dock_slot()                                         -- reserves the edge and lays it out
   banner_off()
   if elro.miniMap and type(raiseWindow) == "function" then pcall(raiseWindow, "mapper") end
@@ -423,6 +429,17 @@ function elro.mapwin_boot()
     if f then f:write(os.date()) ; f:close() end
   end
   elro.mapwin_dock(nil)
+  -- and if something hid the box after all, show it again once start-up has settled
+  for _, t in ipairs({ 1, 3 }) do
+    tempTimer(t, function()
+      local b = elro.miniBox
+      if not (elro._mapDock and b and (b.hidden or b.auto_hidden)) then return end
+      quietly(function() b:show() ; b:lockContainer("full") end)
+      pcall(function() b:save() end)
+      dock_slot()
+      if type(raiseWindow) == "function" then pcall(raiseWindow, "mapper") end
+    end)
+  end
   if first then
     say("this is the map, docked in a panel on the right; drag the bars to resize it, 'mapwin "
       .. "dock' closes it, 'mapwin embed' floats it instead, 'maphelp' has the rest.")

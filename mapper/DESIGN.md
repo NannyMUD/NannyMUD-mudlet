@@ -763,7 +763,7 @@ halt.
 
 ## 11. Publishing
 
-The public repo (`nannymud-mapper`, MIT) is the client only. It carries **no corpus dumps** —
+The public repo (`NannyMUD/NannyMUD-mudlet`, folder `mapper/`, MIT) is the client only. It carries **no corpus dumps** —
 those are real area topology — and no server LPC.
 
 `tools/export-repo.sh <dir>` writes the publishable tree into a staging directory that keeps

@@ -16,11 +16,12 @@ here = os.path.dirname(os.path.abspath(__file__))
 
 border = open(os.path.join(here, 'border.lua'), encoding='utf-8').read()
 
-# Vendoring discipline: the two copies must stay byte-identical. Only checked when the
-# mapper tree is present; the published NannyBasics repo has no such sibling.
-mirror = os.path.normpath(os.path.join(here, '..', 'nmp', 'client', 'lua', 'border.lua'))
-if os.path.isfile(mirror):
-    if open(mirror, encoding='utf-8').read() != border:
+# Vendoring discipline: the two copies must stay byte-identical. The mapper's copy is at
+# ../nmp/client/lua in the MUD repo and at ../mapper/lua in the public NannyMUD-mudlet repo.
+for mirror in (os.path.join(here, '..', 'nmp', 'client', 'lua', 'border.lua'),
+               os.path.join(here, '..', 'mapper', 'lua', 'border.lua')):
+    mirror = os.path.normpath(mirror)
+    if os.path.isfile(mirror) and open(mirror, encoding='utf-8').read() != border:
         sys.exit('build: border.lua has drifted from\n  %s\nresync the two copies before building.' % mirror)
 
 # The newest border.lua wins at load by its REV, so a changed file must carry a higher REV than
@@ -34,7 +35,8 @@ def rev_of(src):
     return int(m.group(1)) if m else 0
 
 try:
-    committed = subprocess.run(['git', 'show', 'HEAD:nannybasics/border.lua'], cwd=here,
+    # HEAD:./ is relative to cwd, so this works wherever the folder sits in its repo
+    committed = subprocess.run(['git', 'show', 'HEAD:./border.lua'], cwd=here,
                                capture_output=True, text=True, encoding='utf-8')
 except OSError:
     committed = None

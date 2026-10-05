@@ -23,9 +23,12 @@ you want both, and they share one layout.
 
 ## Install
 
-Download `NannyBasics.xml` from [Releases](../../releases) and drag it onto the Mudlet
-window. To update, remove NannyBasics under Toolbox → Package Manager first, then install
-the new one.
+Download `NannyBasics.xml` from [Releases](https://github.com/NannyMUD/NannyMUD-mudlet/releases) and drag it onto the Mudlet
+window.
+
+**Updating.** When a newer release is out, NannyBasics says so shortly after Mudlet starts.
+Type `nanny update`: it downloads the new package and swaps it in, and if the download fails
+nothing is changed. Your layout is kept.
 
 Then, in the game, switch on what you want. Each setting is remembered when you log in again:
 
@@ -43,7 +46,7 @@ toggle strigoi gmcp    the guild pane, for the Strigoi
 ## Layout
 
 The panes sit in a panel beside the text, by default in two columns under the map if you use
-[the mapper](https://github.com/tobfon/nannymud-mapper), with the vitals bar along the bottom.
+[the mapper](../mapper), with the vitals bar along the bottom.
 
 - Drag a pane by its title strip to move it: onto another pane to stack with it, near a
   pane's edge to split that space, or to an empty edge of the window to open a panel there.
@@ -59,6 +62,7 @@ nanny reset                put every pane back in its default place and size
 nanny off / nanny on       hide the whole panel (for a second session in MultiView) / bring it back
 nanny log                  show or hide the GMCP log
 nanny hello                ask the game for the packages again
+nanny update               install the newest release
 ```
 
 ## Development

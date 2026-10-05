@@ -1,4 +1,4 @@
-# nannymud-mapper
+# ElrohirMapper
 
 Client-side automap for [NannyMUD](https://nannymud.lysator.liu.se/). A Mudlet package that
 computes each area's layout in Lua from the game's map data, sent over GMCP or as one `!NMAP`
@@ -14,17 +14,18 @@ which rooms form an area, where each one goes, and which edges have to bend.
 Two steps, and the first one alone does nothing.
 
 **1. The Mudlet package.** Download `ElrohirMapper.mpackage` from
-[Releases](https://github.com/tobfon/nannymud-mapper/releases) and drag it onto the Mudlet
+[Releases](https://github.com/NannyMUD/NannyMUD-mudlet/releases) and drag it onto the Mudlet
 window.
 
-Or, in one line — note this is 111 characters and your client will wrap it, so join it back
-together before pasting:
+Or, in one line — note this is long and your client will wrap it, so join it back together
+before pasting:
 
 ```
-lua installPackage("https://github.com/tobfon/nannymud-mapper/releases/latest/download/ElrohirMapper.mpackage")
+lua installPackage("https://github.com/NannyMUD/NannyMUD-mudlet/releases/latest/download/ElrohirMapper.mpackage")
 ```
 
-**Updating.** Type `mapupdate`. It downloads the newest release and swaps it in; if the download
+**Updating.** When a newer release is out, the mapper says so shortly after Mudlet starts.
+Type `mapupdate`. It downloads the newest release and swaps it in; if the download
 fails nothing is changed. Your map lives in the profile, not in the package, and is kept. By
 hand: Mudlet refuses to install over a package
 that is already there ("package ElrohirMapper is already installed"), so remove `ElrohirMapper`
@@ -34,7 +35,7 @@ under Toolbox → Package Manager first, then install the new one.
 you are in named in its title strip. Drag the bar at the panel's inner edge to make it wider or
 narrower; the size is remembered. `mapwin dock` closes the panel and opens it again, and
 `mapwin dock <width>` sets its width. With
-[NannyBasics](https://github.com/tobfon/nannymud-basics) installed, its panes share the same
+[NannyBasics](../basics) installed, its panes share the same
 panel: drag a pane by its title strip to move it, and the bars between panes to resize them.
 
 `mapwin embed` shows the map as a small window over the top right corner of the text instead,

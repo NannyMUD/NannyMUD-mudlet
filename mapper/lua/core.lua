@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
 -- which refuses to build if the two differ.
-elro.VERSION = "0.6.0"
+elro.VERSION = "0.7.0"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -494,6 +494,24 @@ function elro.load_hints()
   if type(getMapUserData) == "function" then
     local ok, s = pcall(getMapUserData, "elro.hintsOff")
     elro.hintsOff = (ok and s == "1") or false
+  end
+  elro.seed_shipped_hints()
+end
+
+-- The shipped hints (nanny_hints.lua) onto the map as onRoom would store them, so rooms
+-- already explored follow them at the next relayout without being walked again.
+function elro.seed_shipped_hints()
+  local sh = elro.shippedHints
+  if type(sh) ~= "table" then return end
+  for sa, t in pairs(sh.areas or {}) do
+    if elro.hintArea[sa] == nil then elro.hintArea[sa] = t end
+  end
+  if type(roomExists) ~= "function" then return end
+  for id, t in pairs(sh.rooms or {}) do
+    if roomExists(id) and (getRoomUserData(id, "mh") or "") == "" then
+      setRoomUserData(id, "mh", t)
+      if elro.cs_dirty then elro.cs_dirty(id) end
+    end
   end
 end
 
@@ -4538,7 +4556,7 @@ end
 -- package being uninstalled. Functions and timers live in the Lua state, which
 -- an uninstall does not clear, so they survive to do the install.
 -- With a local file as argument the download is skipped (testing a build).
-elro.UPDATE_URL = "https://github.com/tobfon/nannymud-mapper/releases/latest/download/ElrohirMapper.mpackage"
+elro.UPDATE_URL = "https://github.com/NannyMUD/NannyMUD-mudlet/releases/latest/download/ElrohirMapper.mpackage"
 
 function elro.update_swap(path)
   -- ONE swap at a time. Seen live: the swap ran twice (a second download event,
@@ -4621,6 +4639,50 @@ function elro.cmd_update(arg)
   end)
   cecho("\n<cyan>[elro]: downloading the newest package...\n<reset>")
   downloadFile(path, elro.UPDATE_URL)
+end
+
+-- "0.10.2" > "0.9.9": compared part by part as numbers
+function elro.version_newer(a, b)
+  local pa, pb = {}, {}
+  for n in tostring(a):gmatch("%d+") do pa[#pa + 1] = tonumber(n) end
+  for n in tostring(b):gmatch("%d+") do pb[#pb + 1] = tonumber(n) end
+  for i = 1, math.max(#pa, #pb) do
+    local x, y = pa[i] or 0, pb[i] or 0
+    if x ~= y then return x > y end
+  end
+  return false
+end
+
+-- Once per session: ask GitHub for the latest release and say so if it is newer than this one.
+-- Silent when up to date and on any error.
+function elro.check_latest()
+  if type(downloadFile) ~= "function" or type(yajl) ~= "table" then return end
+  local dir = getMudletHomeDir() .. "/elro_update"
+  if lfs and lfs.mkdir then pcall(lfs.mkdir, dir) end
+  local path = dir .. "/latest.json"
+  os.remove(path)
+  local hd, he
+  hd = registerAnonymousEventHandler("sysDownloadDone", function(_, file)
+    if file ~= path then return end
+    pcall(killAnonymousEventHandler, hd) ; pcall(killAnonymousEventHandler, he)
+    local f = io.open(path, "r") ; if not f then return end
+    local body = f:read("*a") ; f:close()
+    local ok, t = pcall(yajl.to_value, body)
+    local tag = ok and type(t) == "table" and t.tag_name
+    if type(tag) == "string" and elro.version_newer(tag, elro.VERSION) then
+      cecho(string.format("\n<yellow>[elro]: ElrohirMapper %s is out (you have %s). Type 'mapupdate'.\n<reset>",
+        (tag:gsub("^v", "")), tostring(elro.VERSION)))
+    end
+  end)
+  he = registerAnonymousEventHandler("sysDownloadError", function(_, why, file)
+    if file and file ~= path then return end
+    pcall(killAnonymousEventHandler, hd) ; pcall(killAnonymousEventHandler, he)
+  end)
+  downloadFile(path, "https://api.github.com/repos/NannyMUD/NannyMUD-mudlet/releases/latest")
+end
+if not elro._verChecked and type(tempTimer) == "function" and type(downloadFile) == "function" then
+  elro._verChecked = true
+  tempTimer(5, function() pcall(function() elro.check_latest() end) end)
 end
 
 -- The map line (!NMP or !NMAP), as `key=value` pairs joined by `|`, in any order,
@@ -4884,6 +4946,12 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
     return s ~= "" and s or nil
   end
   mha, mh = tidy(mha), tidy(mh)
+  -- a server that sends no hints: the ones shipped with the client (nanny_hints.lua)
+  local sh = elro.shippedHints
+  if type(sh) == "table" then
+    mha = mha or (sh.areas and sh.areas[sa])
+    mh = mh or (sh.rooms and sh.rooms[id])
+  end
   if elro.hintArea[sa] ~= mha then
     elro.hintArea[sa] = mha ; elro.save_hints() ; changed = true
   end

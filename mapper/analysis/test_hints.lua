@@ -105,6 +105,46 @@ ok(MAPUD["elro.hintsOff"] == "1", "...and the choice is saved with the map")
 elro.cmd_hints("on")
 ok(all_on({ 71, 72, 73, 74, 75, 76 }, "world"), "on: followed again")
 
+print("hints shipped with the client, for a server that sends none")
+fresh()
+local real = elro.shippedHints
+elro.shippedHints = { areas = { harbour = "world" }, rooms = { [83] = "world" } }
+elro.onRoom(1, 0, "none", "Square", "world", "east", "outdoors")
+for i = 1, 3 do
+  elro.onRoom(80 + i, i == 1 and 1 or 79 + i, "east", "Harbour " .. i, "harbour", "east,west", "outdoors")
+end
+for i = 1, 6 do
+  elro.onRoom(90 + i, i == 1 and 1 or 89 + i, "south", "Mill " .. i, "mill", "north,south", "outdoors")
+end
+elro.onRoom(83, 92, "west", "Wedding shop", "mill", "east", "indoors")
+elro.recompute_areas()
+ok(all_on({ 81, 82 }, "world"), "a shipped area hint puts the area on world, no hint on the wire")
+ok(canvas(83) == "world", "a shipped room hint puts that one room on world")
+ok(all_on({ 91, 92, 93, 94, 95, 96 }, "mill"), "...and the rest of its area stays on its own map")
+elro.cmd_hints("off harbour")
+ok(all_on({ 81, 82 }, "harbour"), "the player can still turn a shipped hint off")
+elro.onRoom(81, 82, "west", "Harbour 1", "harbour", "east,west", "outdoors")
+ok(canvas(81) == "harbour", "...and re-walking does not bring it back")
+
+print("shipped hints arriving after the rooms were explored")
+fresh()
+elro.shippedHints = nil
+elro.onRoom(1, 0, "none", "Square", "world", "east", "outdoors")
+for i = 1, 6 do
+  elro.onRoom(90 + i, i == 1 and 1 or 89 + i, "south", "Mill " .. i, "mill", "north,south", "outdoors")
+end
+elro.onRoom(83, 92, "west", "Wedding shop", "mill", "east", "indoors")
+elro.onRoom(81, 1, "east", "Harbour 1", "harbour", "east,west", "outdoors")
+elro.recompute_areas()
+ok(canvas(83) == "mill", "before: the shop is on its own area's map")
+elro.shippedHints = { areas = { harbour = "world" }, rooms = { [83] = "world" } }
+elro.hints_loaded = nil                         -- what loading nanny_hints.lua does
+ok(elro.hint_table().harbour ~= nil, "maphints lists a shipped area hint before any walking")
+elro.recompute_areas()
+ok(canvas(83) == "world", "after: the next relayout moves the room, no walking")
+ok(canvas(81) == "world", "...and the hinted area too")
+elro.shippedHints = real
+
 print("")
 if fails == 0 then print("PASS  " .. checks .. "/" .. checks .. " checks passed")
 else print("FAIL  " .. fails .. "/" .. checks .. " checks failed") ; os.exit(1) end
