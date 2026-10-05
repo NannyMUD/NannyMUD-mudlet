@@ -29,6 +29,25 @@ if [ "$fail" -ne 0 ]; then
   exit 1
 fi
 
+# ---- PRIVATE FILES: the corpus and internal notes never leave this disk ------
+# .gitignore keeps them out of `git add`; this refuses them even when forced. It also
+# refuses an added line naming a room file: the game never shows players those paths.
+private=$(git diff --cached --name-only --diff-filter=ACMR | \
+  grep -E '^mapper/analysis/[^/]*\.txt$|^mapper/analysis/cov/|^mapper/analysis/cov_specs|^mapper/analysis/(PRUNE|README)\.md$|^mapper/PLAN')
+if [ -n "$private" ]; then
+  echo "pre-commit: these are private (corpus dumps, coverage, internal notes):" >&2
+  echo "$private" | sed 's/^/  /' >&2
+  echo "  unstage them: git restore --staged <file>" >&2
+  fail=1
+fi
+roompath=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -v '^+++' | \
+  grep -E '(^|[^a-zA-Z])players/[a-z]+/|room/contrib/[a-z]+/' | head -5)
+if [ -n "$roompath" ]; then
+  echo "pre-commit: an added line names a room file; describe the room instead:" >&2
+  echo "$roompath" | cut -c1-120 | sed 's/^/  /' >&2
+  fail=1
+fi
+
 # ---- YIELD SAFETY: no NEW pcall around one of our own functions -------------
 # Mudlet runs STOCK LUA 5.1, which cannot yield across a C-call boundary. The
 # background relayout (elro.bg_*) yields from deep inside the layout engine, so a
@@ -62,7 +81,7 @@ fi
 # are exempt on purpose: they pcall our functions deliberately, to PROVE the rule
 # (test_bgcs.lua wraps pcall to emulate the 5.1 restriction LuaJIT does not have).
 ALLOWED='elro\.topo_cross|elro\.compose_spqr|elro\.wire_cross|elro\.near_scan|elro\.off_record|elro\.recenter'
-for f in $(git diff --cached --name-only --diff-filter=ACM -- '*/client/lua/*.lua'); do
+for f in $(git diff --cached --name-only --diff-filter=ACM -- 'mapper/lua/*.lua'); do
   bad=$(git show ":$f" | grep -n 'pcall( *elro\.' | grep -Ev "pcall\( *($ALLOWED)\b")
   if [ -n "$bad" ]; then
     echo "pre-commit: pcall around our own function in $f -- a yield underneath it" >&2
@@ -87,11 +106,11 @@ done
 # so it warns below when the two differ.
 if [ -z "$SKIP_GATE" ]; then
   root=$(git rev-parse --show-toplevel)
-  gate="$root/nmp/client/tools/run-gate.sh"
+  gate="$root/mapper/tools/run-gate.sh"
   staged_engine=$(git diff --cached --name-only --diff-filter=ACM \
-                  -- '*/client/lua/*.lua' '*/client/map_helper.xml')
+                  -- 'mapper/lua/*.lua' 'mapper/map_helper.xml')
   if [ -n "$staged_engine" ] && [ -f "$gate" ]; then
-    if [ -n "$(git diff --name-only -- '*/client/lua/*.lua' '*/client/map_helper.xml')" ]; then
+    if [ -n "$(git diff --name-only -- 'mapper/lua/*.lua' 'mapper/map_helper.xml')" ]; then
       echo "pre-commit: note -- lua/ has unstaged edits; the gate tested the working tree." >&2
     fi
     sh "$gate" fast || {

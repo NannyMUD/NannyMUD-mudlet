@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CORPUS LINE COVERAGE, one union per knob spec.  Run from nmp/client.
+# CORPUS LINE COVERAGE, one union per knob spec.  Run from mapper/.
 #
 #   analysis/cover_sweep.sh base "-"                  # the default-configuration union
 #   analysis/cover_sweep.sh faceFit_on "faceFit=true" # what that knob's branch adds

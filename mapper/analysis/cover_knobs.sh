@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # THE KNOB SWEEP: line coverage of the whole corpus under every knob's flipped value, so that
 # "this line never runs" can be sharpened into "this line never runs, under ANY knob setting we
-# ship".  Run from nmp/client.
+# ship".  Run from mapper/.
 #
 #   analysis/cover_knobs.sh              # base + probes + one tag per knob flip
 #   JOBS=4 analysis/cover_knobs.sh       # fewer parallel luajits

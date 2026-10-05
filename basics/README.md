@@ -77,9 +77,10 @@ python build.py        # -> NannyBasics.xml
 copy has the higher `REV` runs, whatever order the packages load in. Raise `REV` whenever the
 file changes, and only ever add to what it offers: older packages keep calling it.
 
-While developing, the package loads `nannybasics.lua` from disk first when it is present, so
-`nanny reload` picks up edits without reinstalling. A normal install has no such file and
-runs the copy built into the package.
+While developing, `nanny src <path to your checkout's basics/nannybasics.lua>` makes the
+package load that file instead of its built-in copy, so `nanny reload` picks up edits without
+reinstalling; `nanny src off` goes back to the built-in copy. Tests:
+`luajit basics/tests/test_border.lua` and `luajit basics/tests/test_guild.lua`.
 
 ## License
 

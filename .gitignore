@@ -1,0 +1,13 @@
+# The mapper's corpus and internal notes stay on the maintainer's disk: the dumps are real
+# area topology. A pre-commit hook refuses them as well (mapper/tools/guard-private.sh).
+mapper/analysis/*.txt
+mapper/analysis/cov/
+mapper/analysis/cov_specs.all
+mapper/analysis/PRUNE.md
+mapper/analysis/README.md
+mapper/PLAN.md
+mapper/PLAN-maze.md
+
+# build output
+*.mpackage
+basics/NannyBasics.xml

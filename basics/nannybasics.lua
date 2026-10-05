@@ -10,8 +10,14 @@ NannyBasics = NannyBasics or {}
 local N = NannyBasics
 N.VERSION = "0.7.0"
 
--- The source on disk wins over the copy built into the package (development only).
-N.SRC = N.SRC or ""
+-- Development only: a source file on disk wins over the copy built into the package. Off
+-- unless the profile has nanny_src.txt naming it ('nanny src <path>' writes that file).
+local function src_file() return getMudletHomeDir() .. "/nanny_src.txt" end
+if not N.SRC then
+  local fh = type(getMudletHomeDir) == "function" and io.open(src_file(), "r")
+  N.SRC = fh and (fh:read("*l") or ""):gsub("^%s+", ""):gsub("%s+$", "") or ""
+  if fh then fh:close() end
+end
 
 function N.load_file()
   local fh = io.open(N.SRC, "r")
@@ -281,7 +287,7 @@ function N.chat_wrap()
   if not N.chatBox then return end
   local cw = calcFontSize(N.CHAT_FONT) or 8
   local ok, w = pcall(function() return N.chatBox:get_width() end)
-  w = (ok and w and w > 0) and w or 360
+  w = (ok and type(w) == "number" and w > 0) and w or 360
   local cols = math.max(20, math.floor((w - 20) / cw))
   for _, t in pairs(N.tabs or {}) do pcall(function() t.con:setWrap(cols) end) end
 end
@@ -916,7 +922,20 @@ function N.cmd(arg)
   elseif arg == "on" then
     if type(MudletBorders) == "table" then MudletBorders.resume() ; N.relayout() end
     say("right-side UI on.")
+  elseif verb == "src" then
+    -- development: load nannybasics.lua from this path instead of the package; "off" stops it
+    if rest == "" then
+      say(N.SRC ~= "" and ("loading from " .. N.SRC) or "loading the built-in copy (no source file set).")
+    else
+      local path = rest == "off" and "" or rest:gsub("\\", "/")
+      local fh = io.open(src_file(), "w")
+      if fh then fh:write(path) ; fh:close() end
+      N.SRC = path
+      say(path == "" and "back to the built-in copy from the next start." or
+          ("loading from " .. path .. "; 'nanny reload' now."))
+    end
   elseif arg == "reload" then
+    if N.SRC == "" then say("no source file set: 'nanny src <path to nannybasics.lua>' first.") return end
     local ok, err = N.load_file()
     if not ok then cecho("\n<red>[nanny]: reload failed: " .. tostring(err) .. "\n<reset>") end
   else

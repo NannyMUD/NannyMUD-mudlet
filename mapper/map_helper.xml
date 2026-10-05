@@ -736,7 +736,7 @@ else elro.delete_room(tonumber(matches[2])) end</script>
 --   1. an already-set elro.src_dir (set it before install to override)
 --   2. a path written into &lt;mudletHomeDir&gt;/elro_src.txt (first line)
 --   3. the installed package's own lua/ directory -- this is the SHIPPED path
---   4. the dev repo default below
+--   4. the installed lua/ again, so a missing one is reported by the load itself
 elro = elro or {}
 if not elro.src_dir then
   local ok, f = pcall(io.open, getMudletHomeDir() .. "/elro_src.txt", "r")
@@ -754,7 +754,7 @@ if not elro.src_dir then
   local ok, f = pcall(io.open, d .. "/modules.lua", "r")
   if ok and f then f:close() ; elro.src_dir = d end
 end
-elro.src_dir = elro.src_dir or "c:/mud/onserver/nmp/client/lua"
+elro.src_dir = elro.src_dir or (getMudletHomeDir() .. "/ElrohirMapper/lua")
 
 -- The ordered module list lives in lua/modules.lua and is re-read on every load, so
 -- adding a module needs only `mapreload`, not a package reinstall. The literal list
