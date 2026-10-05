@@ -111,7 +111,7 @@ setRoomName(102, "swamp\27[38;40;0m")
 mn = elro.maze_name(members)
 ok(mn == "swamp", "ANSI in a stored name does not split the vote (got '" .. tostring(mn) .. "')")
 
--- ⛔ AND THE ESC-LESS RESIDUE, which is what is actually on the map: mapreg_d once
+-- ⛔ AND THE ESC-LESS RESIDUE, which is what is actually on the map: the old server once
 -- stripped the ESC byte alone and left the rest as literal text. A name carrying it
 -- must still compare equal, or the signal silently under-reports -- it missed a real
 -- "a paved road" door room on the first live run for precisely this.

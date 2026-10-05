@@ -1,6 +1,6 @@
 -- NannyMUD's merge hints, shipped with the client: rooms the server files under one area that
 -- belong on another area's map. The server sends no hints, so onRoom uses these in place of
--- the wire's mha= (a whole area) and mh= (one room, by its number in mapd's registry).
+-- the wire's mha= (a whole area) and mh= (one room, by the number the game gives it).
 -- 'mapmerges' lists them; 'maphints off <area>' and 'mapunmerge' still overrule them.
 
 elro = elro or {}
@@ -11,8 +11,7 @@ elro.shippedHints = {
     catwoman = "world",
     chrisp   = "world",
   },
-  -- room number = "canvas"; look a number up in game with
-  --   eval return "/obj/daemon/mapd"->query_known_id("<path>")
+  -- room number = "canvas"
   rooms = {
     [660] = "world",   -- naketa's wedding shop
     [219] = "world",   -- taren's claim shop

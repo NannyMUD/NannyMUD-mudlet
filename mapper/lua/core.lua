@@ -2128,12 +2128,12 @@ function elro.view_assert(why)
   end
 end
 
--- Room names arrive from the feed and can carry colour. mapreg_d strips it, but onRoom
+-- Room names arrive from the feed and can carry colour. The server strips it, but onRoom
 -- is the client's whole API (another mud wires its own protocol to it), so the name is
 -- not assumed clean here either. Matches the full CSI, not anything bracket-shaped: a
 -- room called "bracket [north] kept" has to survive.
 --
--- ⛔ THE SECOND PATTERN IS FOR A CSI THAT LOST ITS ESC. mapreg_d once stripped the ESC
+-- ⛔ THE SECOND PATTERN IS FOR A CSI THAT LOST ITS ESC. The old server once stripped the ESC
 -- byte alone and left "[38;40;0m" behind as literal text (fixed server-side in 685cac4,
 -- but every name written before that is still in the map file). Those names then fail
 -- string equality against a clean one -- mapmazefit missed a "a paved road" door room
@@ -2932,9 +2932,9 @@ elro.filler_verbs = {
   ["to"] = true, ["the"] = true,
 }
 
--- Whitelist for the auto special exit: the non-compass members of DIR_VERBS in
--- mapreg_d.c (anything else on that path is movement-message prose). KEEP IN
--- SYNC with the server list.
+-- Whitelist for the auto special exit: the non-compass movement verbs the server reports
+-- as a direction (anything else on that path is movement-message prose). Keep in step
+-- with the server's list.
 elro.hook_verbs = { enter = true, exit = true, out = true, ["in"] = true }
 
 -- The verb worth showing for a recorded edge command. The stored value may be
@@ -3050,7 +3050,7 @@ function elro.glyph_room(id)
   elro.glyph_paint(id, elro.glyph_char(id))
 end
 
--- mapreg_d._clean() caps every !NMP field at 64 chars; the eight compass names
+-- The old server capped every !NMP field at 64 chars; the eight compass names
 -- alone are 60, so a busy room's exit list arrives with its tail chopped.
 elro.EXITS_CAP = 64
 

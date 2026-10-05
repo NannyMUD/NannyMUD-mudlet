@@ -75,7 +75,7 @@ and the prefix changed from `!MAP` while nobody but the testers had a client, so
 no old client is kept working. `analysis/test_nmp.lua` covers the parser.
 
 **The captured command.** The server reads every command as the parser ran it
-(`query_verb()` plus `query_verb_args()`) and sends it as the
+(the verb and its arguments) and sends it as the
 `!NMP` line's `dir` for the player's own moves and party follows. A non-compass
 `dir` is therefore a replayable command and `onRoom` records it as the edge
 command (the same store `maprecordmove` writes, first-writer wins), which is what

@@ -31,7 +31,8 @@ fi
 
 # ---- PRIVATE FILES: the corpus and internal notes never leave this disk ------
 # .gitignore keeps them out of `git add`; this refuses them even when forced. It also
-# refuses an added line naming a room file: the game never shows players those paths.
+# refuses an added line naming a room file, a lib path or a server daemon file: the public
+# repo describes the server, it does not point into it.
 private=$(git diff --cached --name-only --diff-filter=ACMR | \
   grep -E '^mapper/analysis/[^/]*\.txt$|^mapper/analysis/cov/|^mapper/analysis/cov_specs|^mapper/analysis/(PRUNE|README)\.md$|^mapper/PLAN')
 if [ -n "$private" ]; then
@@ -41,9 +42,9 @@ if [ -n "$private" ]; then
   fail=1
 fi
 roompath=$(git diff --cached -U0 --diff-filter=ACMR | grep -E '^\+' | grep -v '^+++' | \
-  grep -E '(^|[^a-zA-Z])players/[a-z]+/|room/contrib/[a-z]+/' | head -5)
+  grep -E '(^|[^a-zA-Z])players/[a-z]+/|room/contrib/[a-z]+/|/(obj|std|secure)/|/room/[a-z]|[a-z_]+_d\.c' | head -5)
 if [ -n "$roompath" ]; then
-  echo "pre-commit: an added line names a room file; describe the room instead:" >&2
+  echo "pre-commit: an added line names a server file or lib path; describe it instead:" >&2
   echo "$roompath" | cut -c1-120 | sed 's/^/  /' >&2
   fail=1
 fi
