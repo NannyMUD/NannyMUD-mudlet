@@ -27,5 +27,5 @@ release is always the one to get.
 ## Adding something
 
 Put each new package or tool in a folder of its own, with a README, and add it to the table
-above. A package that needs space on the screen can join the shared layout through `border.lua`
-(a copy of it is in each package that uses it; the newest copy runs).
+above. A package that needs space on the screen can join the shared layout: see
+[LAYOUT.md](LAYOUT.md).
