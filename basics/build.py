@@ -1,4 +1,4 @@
-"""Build NannyBasics.xml, an installable Mudlet package, from nannybasics.lua.
+"""Build NannyBasics.mpackage (config.lua + NannyBasics.xml) from nannybasics.lua.
 
 The shared border coordinator (border.lua) is vendored identically with the mapper and
 prepended into the single shipped script, so an installed copy carries it without needing
@@ -6,7 +6,7 @@ a separate file. It is wrapped in an immediately-called function because border.
 with `return B`, which would otherwise abort the combined chunk. In the monorepo the
 mapper's copy is diffed against ours to catch drift.
 
-Run from anywhere:  python nannybasics/build.py
+Run from anywhere:  python basics/build.py
 """
 import os
 import sys
@@ -66,4 +66,24 @@ xml = '''<?xml version="1.0" encoding="UTF-8"?>
 out = os.path.join(here, 'NannyBasics.xml')
 with open(out, 'w', encoding='utf-8', newline='\n') as f:
     f.write(xml)
-print('build: %s (%d bytes of Lua: %d border + %d body)' % (out, len(lua), len(border), len(body)))
+
+# The .mpackage is what ships: the script plus a config.lua, whose version is what Mudlet's
+# package manager (mpkg) compares. That version is N.VERSION, so it lives in one place.
+import zipfile
+m = re.search(r'^N\.VERSION = "([^"]+)"', body, re.M)
+if not m:
+    sys.exit('build: no N.VERSION = "..." line in nannybasics.lua')
+config = '''mpackage = "NannyBasics"
+title = "NannyBasics: gauges, score card, party, guild and chat panes for NannyMUD"
+description = [[Draws NannyMUD's GMCP data: HP/SP and foe gauges, a score card, your party, your
+guild, and a tabbed chat window. Shares one layout with the ElrohirMapper map. Type `nanny` once
+installed, and `nanny update` to get a newer version.]]
+version = "%s"
+author = "Elrohir"
+''' % m.group(1)
+pkg = os.path.join(here, 'NannyBasics.mpackage')
+with zipfile.ZipFile(pkg, 'w', zipfile.ZIP_DEFLATED) as z:
+    z.writestr('config.lua', config)
+    z.writestr('NannyBasics.xml', xml)
+print('build: %s (version %s; %d bytes of Lua: %d border + %d body)'
+      % (pkg, m.group(1), len(lua), len(border), len(body)))

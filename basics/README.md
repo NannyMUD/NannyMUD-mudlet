@@ -23,12 +23,14 @@ you want both, and they share one layout.
 
 ## Install
 
-Download `NannyBasics.xml` from [Releases](https://github.com/NannyMUD/NannyMUD-mudlet/releases) and drag it onto the Mudlet
-window.
+Download `NannyBasics.mpackage` from the newest
+[release](https://github.com/NannyMUD/NannyMUD-mudlet/releases/latest) and drag it onto the
+Mudlet window. The same release has the map, `ElrohirMapper.mpackage`; drag both in together if
+you want both.
 
-**Updating.** When a newer release is out, NannyBasics says so shortly after Mudlet starts.
-Type `nanny update`: it downloads the new package and swaps it in, and if the download fails
-nothing is changed. Your layout is kept.
+**Updating.** When a newer release is out, you are told so shortly after Mudlet starts. Type
+`nanny update`: it downloads the new package and swaps it in, and the map too if you have it.
+If the download fails nothing is changed. Your layout is kept.
 
 Then, in the game, switch on what you want. Each setting is remembered when you log in again:
 
@@ -70,7 +72,7 @@ nanny update               install the newest release
 The package is built from `nannybasics.lua` and `border.lua` by `build.py`:
 
 ```
-python build.py        # -> NannyBasics.xml
+python build.py        # -> NannyBasics.mpackage
 ```
 
 `border.lua` is the layout coordinator. The mapper carries an identical copy, and whichever

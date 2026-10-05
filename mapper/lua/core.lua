@@ -4590,7 +4590,16 @@ function elro.update_swap(path)
   end)
 end
 
-function elro.cmd_update(arg)
+-- Whether a package of that name is installed (true when Mudlet cannot say).
+function elro.pkg_installed(name)
+  if type(getPackages) ~= "function" then return true end
+  for _, p in ipairs(getPackages() or {}) do if p == name then return true end end
+  return false
+end
+
+-- `alone`: called by NannyBasics' update, which updates itself; otherwise this updates both,
+-- since every release carries both packages at one version.
+function elro.cmd_update(arg, alone)
   -- Once per half minute. Seen live and never explained: the command ran twice
   -- for one typed line. A second run would start a second download into the same
   -- file, and a second swap. Time-boxed so a download that never reports back
@@ -4639,6 +4648,10 @@ function elro.cmd_update(arg)
   end)
   cecho("\n<cyan>[elro]: downloading the newest package...\n<reset>")
   downloadFile(path, elro.UPDATE_URL)
+  if not alone and elro.pkg_installed("NannyBasics") and type(NannyBasics) == "table"
+     and type(NannyBasics.update) == "function" then
+    NannyBasics.update(true)
+  end
 end
 
 -- "0.10.2" > "0.9.9": compared part by part as numbers
@@ -4654,9 +4667,13 @@ function elro.version_newer(a, b)
 end
 
 -- Once per session: ask GitHub for the latest release and say so if it is newer than this one.
--- Silent when up to date and on any error.
+-- The packages share one version, so only the first of them to get here asks (NannyMUDUpdates
+-- is shared with NannyBasics). Silent when up to date and on any error.
 function elro.check_latest()
   if type(downloadFile) ~= "function" or type(yajl) ~= "table" then return end
+  NannyMUDUpdates = NannyMUDUpdates or {}
+  if NannyMUDUpdates.checked then return end
+  NannyMUDUpdates.checked = true
   local dir = getMudletHomeDir() .. "/elro_update"
   if lfs and lfs.mkdir then pcall(lfs.mkdir, dir) end
   local path = dir .. "/latest.json"
@@ -4670,8 +4687,9 @@ function elro.check_latest()
     local ok, t = pcall(yajl.to_value, body)
     local tag = ok and type(t) == "table" and t.tag_name
     if type(tag) == "string" and elro.version_newer(tag, elro.VERSION) then
-      cecho(string.format("\n<yellow>[elro]: ElrohirMapper %s is out (you have %s). Type 'mapupdate'.\n<reset>",
-        (tag:gsub("^v", "")), tostring(elro.VERSION)))
+      local names = elro.pkg_installed("NannyBasics") and "ElrohirMapper and NannyBasics" or "ElrohirMapper"
+      cecho(string.format("\n<yellow>[elro]: version %s of %s is out (you have %s). Type 'mapupdate'.\n<reset>",
+        (tag:gsub("^v", "")), names, tostring(elro.VERSION)))
     end
   end)
   he = registerAnonymousEventHandler("sysDownloadError", function(_, why, file)

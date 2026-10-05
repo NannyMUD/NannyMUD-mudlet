@@ -24,9 +24,9 @@ before pasting:
 lua installPackage("https://github.com/NannyMUD/NannyMUD-mudlet/releases/latest/download/ElrohirMapper.mpackage")
 ```
 
-**Updating.** When a newer release is out, the mapper says so shortly after Mudlet starts.
-Type `mapupdate`. It downloads the newest release and swaps it in; if the download
-fails nothing is changed. Your map lives in the profile, not in the package, and is kept. By
+**Updating.** When a newer release is out, you are told so shortly after Mudlet starts.
+Type `mapupdate`. It downloads the newest release and swaps it in, NannyBasics too if you have
+it; if the download fails nothing is changed. Your map lives in the profile, not in the package, and is kept. By
 hand: Mudlet refuses to install over a package
 that is already there ("package ElrohirMapper is already installed"), so remove `ElrohirMapper`
 under Toolbox → Package Manager first, then install the new one.

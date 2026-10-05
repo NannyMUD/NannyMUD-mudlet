@@ -795,19 +795,21 @@ end
 -- failed download changes nothing. The swap runs from timers: the alias belongs to the package
 -- being removed, but functions and timers live on in the Lua state. Same shape as mapupdate.
 N.REPO = "NannyMUD/NannyMUD-mudlet"
-N.UPDATE_URL = "https://github.com/" .. N.REPO .. "/releases/latest/download/NannyBasics.xml"
+N.UPDATE_URL = "https://github.com/" .. N.REPO .. "/releases/latest/download/NannyBasics.mpackage"
+
+-- Whether a package of that name is installed (true when Mudlet cannot say).
+local function installed(name)
+  if type(getPackages) ~= "function" then return true end
+  for _, p in ipairs(getPackages() or {}) do if p == name then return true end end
+  return false
+end
 
 function N.update_swap(path)
   if N._updBusy then return end
   N._updBusy = true
-  local function installed()
-    if type(getPackages) ~= "function" then return true end
-    for _, p in ipairs(getPackages() or {}) do if p == "NannyBasics" then return true end end
-    return false
-  end
   local function try(left)
     local ok, err = pcall(installPackage, path)
-    if ok and installed() then
+    if ok and installed("NannyBasics") then
       N._updBusy = nil
       cecho("<green>[nanny]: updated.\n<reset>")
     elseif left > 0 then
@@ -844,7 +846,9 @@ local function fetch(name, url, done, fail)
   downloadFile(path, url)
 end
 
-function N.update()
+-- Every release carries both packages at one version, so one command updates both; `alone` is
+-- set when the mapper's update calls this, so the two do not call each other back.
+function N.update(alone)
   local now = os.time()
   if N._updAt and now - N._updAt < 30 then return end
   N._updAt = now
@@ -855,9 +859,13 @@ function N.update()
   end
   say("downloading the newest NannyBasics...")
   -- the file name is the package name to Mudlet
-  fetch("NannyBasics.xml", N.UPDATE_URL, N.update_swap, function(why)
+  fetch("NannyBasics.mpackage", N.UPDATE_URL, N.update_swap, function(why)
     cecho("\n<red>[nanny]: the download failed (" .. tostring(why) .. "). Nothing was changed.\n<reset>")
   end)
+  if not alone and installed("ElrohirMapper") and type(elro) == "table"
+     and type(elro.cmd_update) == "function" then
+    elro.cmd_update("", true)
+  end
 end
 
 -- "0.10.2" > "0.9.9": compared part by part as numbers
@@ -873,18 +881,23 @@ local function newer(a, b)
 end
 N.newer = newer
 
--- Once per session: ask GitHub for the latest release and say so if it is newer. Silent when up
--- to date and on any error.
+-- Once per session: ask GitHub for the latest release and say so if it is newer. The packages
+-- share one version, so only the first of them to get here asks (NannyMUDUpdates is shared with
+-- the mapper). Silent when up to date and on any error.
 function N.check_latest()
   if type(downloadFile) ~= "function" or type(yajl) ~= "table" then return end
+  NannyMUDUpdates = NannyMUDUpdates or {}
+  if NannyMUDUpdates.checked then return end
+  NannyMUDUpdates.checked = true
   fetch("latest.json", "https://api.github.com/repos/" .. N.REPO .. "/releases/latest", function(path)
     local f = io.open(path, "r") ; if not f then return end
     local body = f:read("*a") ; f:close()
     local ok, t = pcall(yajl.to_value, body)
     local tag = ok and type(t) == "table" and t.tag_name
     if type(tag) == "string" and newer(tag, N.VERSION) then
-      cecho(string.format("\n<yellow>[nanny]: NannyBasics %s is out (you have %s). Type 'nanny update'.\n<reset>",
-        (tag:gsub("^v", "")), N.VERSION))
+      local names = installed("ElrohirMapper") and "ElrohirMapper and NannyBasics" or "NannyBasics"
+      cecho(string.format("\n<yellow>[nanny]: version %s of %s is out (you have %s). Type 'nanny update'.\n<reset>",
+        (tag:gsub("^v", "")), names, N.VERSION))
     end
   end)
 end
