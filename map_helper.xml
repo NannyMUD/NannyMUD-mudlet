@@ -308,7 +308,7 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<script>elro.with_rest(matches[2], elro.mapwin)</script>
 				<command></command>
 				<packageName></packageName>
-				<regex>^mapwin(?:\s+(embed|reset|lock|unlock|left|right))?$</regex>
+				<regex>^mapwin(?:\s+(embed|reset|lock|unlock|left|right|dock(?:\s+\d+)?))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
 				<name>mapview</name>
@@ -761,8 +761,8 @@ elro.src_dir = elro.src_dir or "c:/mud/onserver/nmp/client/lua"
 -- below is the fallback if that file cannot be read.
 -- Keep in sync with lua/modules.lua: a short list here loads a client missing whole
 -- engines (eqw/eqlevers/place) rather than failing, which misbehaves instead of erroring.
-elro.modules = { "geom.lua", "keys.lua", "core.lua", "tune.lua", "canvas.lua", "audit.lua",
-                 "topo.lua", "levers.lua", "eqw.lua", "eqlevers.lua", "place.lua",
+elro.modules = { "border.lua", "geom.lua", "keys.lua", "core.lua", "tune.lua", "canvas.lua",
+                 "audit.lua", "topo.lua", "levers.lua", "eqw.lua", "eqlevers.lua", "place.lua",
                  "walk.lua", "render.lua", "vert.lua" }
 function elro.load_modules()
   local ok, list = pcall(dofile, elro.src_dir .. "/modules.lua")

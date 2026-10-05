@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
 -- which refuses to build if the two differ.
-elro.VERSION = "0.5.0"
+elro.VERSION = "0.6.0"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -2004,13 +2004,15 @@ function elro.recenter(always)
   -- The embedded window sits over the console: its repaint waits until the room's text is
   -- painted (see mapview_refresh). The docked map is elsewhere and centres at once.
   local box = elro.miniBox
-  if box and not (box.hidden or box.auto_hidden) and type(tempTimer) == "function" then
+  if box and not elro._mapDock and not (box.hidden or box.auto_hidden)
+      and type(tempTimer) == "function" then
     if elro._cvTimer then killTimer(elro._cvTimer) end
     elro._cvTimer = tempTimer(0.05, function() elro._cvTimer = nil ; centerview(id) end)
   else
     centerview(id)
   end
   if elro.mapview_refresh then elro.mapview_refresh(always) end
+  if elro.dock_title then elro.dock_title(id) end
   local aid = getRoomArea(id)
   if aid == elro._viewArea and not always then return end
   -- Did the canvas actually change? Not the same question as `always` (a relayout
@@ -3132,7 +3134,7 @@ if elro.terrainOn == nil then elro.terrainOn = true end
 -- highlightRoom's alpha order is (rim, centre), contrary to the onEdgeHi* knob
 -- names. A two-stop gradient cannot cut a clean hole, so the secondary mark is a
 -- small flat dot: equal alphas.
-elro.terrainHalo    = elro.terrainHalo    or 0.3    -- radius, room widths
+elro.terrainHalo    = elro.terrainHalo    or 0.35   -- radius, room widths
 elro.terrainHaloOut = elro.terrainHaloOut or 255    -- rim alpha
 elro.terrainHaloIn  = elro.terrainHaloIn  or 255    -- centre alpha (== rim: flat disc)
 

@@ -30,15 +30,17 @@ hand: Mudlet refuses to install over a package
 that is already there ("package ElrohirMapper is already installed"), so remove `ElrohirMapper`
 under Toolbox → Package Manager first, then install the new one.
 
-**The map window.** The first time the package loads it opens the map as a small window over
-the top right corner of the text. Drag its inner or bottom edge to resize it; the size is
-remembered. `mapwin` closes it and opens it again, `mapwin left` moves it to the other corner,
-`mapwin lock` removes its frame.
+**The map window.** The map opens docked in a panel on the right of the window, with the room
+you are in named in its title strip. Drag the bar at the panel's inner edge to make it wider or
+narrower; the size is remembered. `mapwin dock` closes the panel and opens it again, and
+`mapwin dock <width>` sets its width. With
+[NannyBasics](https://github.com/tobfon/nannymud-basics) installed, its panes share the same
+panel: drag a pane by its title strip to move it, and the bars between panes to resize them.
 
-Mudlet's own **Map** button still works if you would rather have the map docked. Mudlet may
-refuse to show the map in one of the two while the other has been in use; `mapwin` says so
-when it happens. To change over, close the one you have, restart Mudlet, then type `mapwin`
-or click **Map**.
+`mapwin embed` shows the map as a small window over the top right corner of the text instead,
+and Mudlet's own **Map** button still works too. Mudlet may refuse to show the map in one of
+these while another has been in use; `mapwin` says so when it happens. To change over, close
+the one you have, restart Mudlet, then open the other.
 
 Known issue, seen on Mudlet 5.0.1 with two sessions side by side in MultiView: after switching
 to another program and back, the text of the session you are not in can go black. Nothing is

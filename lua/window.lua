@@ -4,6 +4,7 @@ elro = elro or {}
 
 local BOX, MAPPER = "elroMinimap", "elroMinimapMapper"
 local DEFAULT_W, DEFAULT_H = 380, 380
+local DOCK_W = 0.5                 -- default docked-panel width, as a fraction of the window width
 
 local function say(s) cecho("\n<green>[elro]: " .. s .. "\n<reset>") end
 
@@ -72,6 +73,7 @@ end
 
 -- Keep the size the player chose, in pixels, and pin the corner.
 local function anchor()
+  if elro._mapDock then return end           -- the dock drives its own geometry
   local box = elro.miniBox
   if not box or box.hidden or box.auto_hidden or box.minimized then return end
   local pw = pane_width()
@@ -163,6 +165,15 @@ if type(registerMapInfo) == "function" then
   end)
 end
 
+-- Docked, the map's title strip names the room instead, so the banner goes; it comes back when
+-- the map leaves the dock.
+local function banner_off()
+  if type(disableMapInfo) ~= "function" then return end
+  for _, k in ipairs({ "Short", "Full", INFO }) do pcall(disableMapInfo, k) end
+end
+
+local function html(s) return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
+
 local function show()
   elro.miniBox:show()
   anchor()
@@ -202,11 +213,118 @@ local function dock_remember(closed)
   end
 end
 
+-- The map's chosen mode persists across restarts (the Adjustable box is "shown" for both dock
+-- and embed, so its save file cannot tell them apart). "dock" is the default when nothing is set.
+local function mode_path() return getMudletHomeDir() .. "/elro_export/.mapmode" end
+local function set_mode(m)
+  local dir = getMudletHomeDir() .. "/elro_export"
+  if lfs and lfs.mkdir then pcall(lfs.mkdir, dir) end
+  local f = io.open(mode_path(), "w") ; if f then f:write(m) ; f:close() end
+end
+local function get_mode()
+  local ok, f = pcall(io.open, mode_path(), "r") ; if not ok or not f then return nil end
+  local m = f:read("*l") ; f:close()
+  return m and (m:gsub("%s", "")) or nil
+end
+
+-- ================= the docked map =================================================
+-- Unlike 'mapwin embed', which floats the window over the text, the dock registers the map
+-- as a slot on the right edge through the border coordinator (border.lua). It shares that
+-- column with any other package's slots (e.g. NannyBasics' chat), stacked -- map on top. It
+-- reuses the embedded window's box and mapper, so the singleton map widget is never
+-- reparented; the coordinator just moves and resizes the box into its slot.
+local DOCK = "elromap:map"
+local function dock_fit(x, y, w, h)
+  if not elro.miniBox or w <= 0 or h <= 0 then return end
+  pcall(function() elro.miniBox:move(x, y) ; elro.miniBox:resize(w, h) end)
+  -- refit is a createMapper at the new frame; skip it on the per-tick layouts of a live drag,
+  -- the coordinator's final apply (drag end) does it once.
+  if not (type(MudletBorders) == "table" and MudletBorders.is_dragging()) then refit() end
+end
+
+local function dock_slot()
+  MudletBorders.slot(DOCK, {
+    cell = "map", cross = elro._dockW or DOCK_W, hint = nil,   -- the map cell (top of the panel)
+    order = 0, title = elro._dockTitle or "Map", cb = dock_fit,
+  })
+end
+
+-- The strip over the docked map names the room the view is on. Called on every move.
+function elro.dock_title(id)
+  if not elro._mapDock or type(MudletBorders) ~= "table" or not MudletBorders.set_title then return end
+  id = id or elro.view_room()
+  local t = "Map"
+  if id == elro.OFF_ROOM then t = "Map &#183; off the map"
+  elseif id and roomExists(id) then
+    local an = getRoomAreaName(getRoomArea(id))
+    t = "Map &#183; " .. html(getRoomName(id) or "") .. " &#183; " .. id
+      .. ((type(an) == "string" and an ~= "") and (" &#183; " .. html(an)) or "")
+  end
+  elro._dockTitle = t
+  MudletBorders.set_title(DOCK, t)
+end
+
+-- leaving the dock: the strip goes with it, so the banner comes back
+local function undock()
+  elro._mapDock = false
+  pcall(MudletBorders.remove, DOCK)
+  compact_banner()
+end
+
+function elro.mapwin_dock(arg)
+  if type(Adjustable) ~= "table" or not Geyser.Mapper or type(MudletBorders) ~= "table" then
+    cecho("\n<red>[elro]: this Mudlet is too old for the docked map (needs 4.8).\n<reset>") return
+  end
+  -- 'mapwin dock' with the dock already up closes it and gives the border back.
+  if elro._mapDock and arg == nil then
+    undock()
+    if elro.miniBox then pcall(function() elro.miniBox:unlockContainer() ; elro.miniBox:hide() end) end
+    set_mode("off")
+    say("map dock closed, border released. 'mapwin dock' reopens it, 'mapwin embed' is the floating one.")
+    return
+  end
+  local can, why = can_embed()
+  if not can then
+    cecho("\n<red>[elro]: Mudlet would not put the map in a window (" .. why .. "). Its own Map "
+      .. "button still works.\n<reset>")
+    return
+  end
+  if not elro.miniBox then build() end
+  local box = elro.miniBox
+  -- A dock size of its own: the embedded window's saved size is unrelated and can be huge.
+  if tonumber(arg) then MudletBorders.clear_width("right") end  -- explicit width wins over a drag
+  elro._dockW = tonumber(arg) or elro._dockW or DOCK_W
+  elro._mapDock = true
+  set_mode("dock")
+  quietly(function()
+    box:show()
+    if box.minimized then box:restore() end
+    box:lockContainer("full")
+  end)
+  dock_slot()                                         -- reserves the edge and lays it out
+  banner_off()
+  if elro.miniMap and type(raiseWindow) == "function" then pcall(raiseWindow, "mapper") end
+  local at = elro.view_room() or (type(getPlayerRoom) == "function" and getPlayerRoom()) or nil
+  if at and type(centerview) == "function" then pcall(centerview, at) end
+  elro.dock_title(at)
+  local wpx = (type(MudletBorders) == "table" and MudletBorders.total("right")) or 0
+  say("map docked on the right (" .. wpx .. "px), frameless, sharing the column with any panes. "
+    .. "'mapwin dock <width>' resizes it, 'mapwin dock' again closes it.")
+end
+
 function elro.mapwin(arg)
   if type(openMapWidget) ~= "function" or type(closeMapWidget) ~= "function" then
     cecho("\n<red>[elro]: this Mudlet is too old for mapwin (needs 4.8).\n<reset>") return
   end
   local embedded = elro.miniBox and not (elro.miniBox.hidden or elro.miniBox.auto_hidden)
+  if arg and arg:match("^dock") then
+    dock_close()
+    return elro.mapwin_dock(arg:match("^dock%s+(%d+)$"))
+  end
+  if elro._mapDock then                       -- any other mapwin verb leaves the dock first
+    undock()
+    if elro.miniBox then pcall(function() elro.miniBox:unlockContainer() end) end
+  end
   if arg == "embed" then
     dock_close()
     return elro.mapwin_embed(nil)
@@ -279,6 +397,7 @@ function elro.mapwin_embed(arg)
     box:hide()
   end
   box:save()
+  set_mode((elro.miniBox and not (elro.miniBox.hidden or elro.miniBox.auto_hidden)) and "embed" or "off")
 end
 
 -- Open on a first install, afterwards only what the player left open. Type-guarded for the
@@ -286,16 +405,16 @@ end
 function elro.mapwin_boot()
   if elro.miniBox or type(Adjustable) ~= "table" or type(getMudletHomeDir) ~= "function" then return end
   if type(io.exists) ~= "function" then return end
-  -- a player who chose the embedded window keeps it
-  if io.exists(save_path()) and was_open() then
+  local mode = get_mode()
+  -- a player who chose the floating window keeps it
+  if mode == "embed" then
     if not build() then return end
     show()
     return
   end
-  -- otherwise Mudlet's own map, at every start unless the player closed it with 'mapwin'
-  -- (Mudlet does not restore the dock's open state itself; a close by the Map button
-  -- leaves no event and is reopened, one keystroke)
-  if io.exists(dock_closed_marker()) or type(openMapWidget) ~= "function" then return end
+  if mode == "off" then return end     -- closed by choice
+  -- otherwise the docked panel: the default on a first start and whenever "dock" was the last mode
+  if type(MudletBorders) ~= "table" then return end
   local first = not io.exists(getMudletHomeDir() .. "/elro_export/.mapwin_seen")
   if first then
     local dir = getMudletHomeDir() .. "/elro_export"
@@ -303,10 +422,10 @@ function elro.mapwin_boot()
     local f = io.open(dir .. "/.mapwin_seen", "w")
     if f then f:write(os.date()) ; f:close() end
   end
-  dock_open()
+  elro.mapwin_dock(nil)
   if first then
-    say("this is the map. Drag its title bar to float it or dock it to a side; the Map button "
-      .. "or 'mapwin' closes it, 'maphelp' has the rest.")
+    say("this is the map, docked in a panel on the right; drag the bars to resize it, 'mapwin "
+      .. "dock' closes it, 'mapwin embed' floats it instead, 'maphelp' has the rest.")
   end
 end
 
@@ -314,7 +433,19 @@ end
 if elro._winWatch and type(killTimer) == "function" then pcall(killTimer, elro._winWatch) end
 elro._winWatch = nil
 -- 1.2.0 could leave an empty frame behind; the zero-size probe also needs the map put back.
-if elro.miniBox and type(createMapper) == "function" then
+-- A reload keeps elro._mapDock but not the coordinator's callback or the frameless lock, so
+-- the dock is re-established here rather than through the float path.
+if elro._mapDock and type(MudletBorders) == "table" then
+  if not can_embed() then
+    undock()
+    if elro.miniBox then pcall(function() elro.miniBox:hide() end) end
+  else
+    pcall(function() elro.miniBox:show() ; elro.miniBox:lockContainer("full") end)
+    dock_slot()
+    banner_off()
+    elro.dock_title()
+  end
+elseif elro.miniBox and type(createMapper) == "function" then
   if not can_embed() then elro.miniBox:hide()
   elseif not (elro.miniBox.hidden or elro.miniBox.auto_hidden) then show() end
 end
