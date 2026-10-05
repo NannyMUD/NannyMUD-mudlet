@@ -11,3 +11,7 @@ mapper/PLAN-maze.md
 # build output
 *.mpackage
 basics/NannyBasics.xml
+
+# cut from the engine by topo_extract.sh / outer_extract.sh; re-cut, never edited
+mapper/analysis/topo_extract.lua
+mapper/analysis/outer_extract.lua
