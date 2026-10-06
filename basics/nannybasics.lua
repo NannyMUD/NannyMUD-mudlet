@@ -47,11 +47,12 @@ end
 
 N.WANT = { "Char 1", "Comm.Channel 1", "External.Discord 1", "Group 1", "Guild 1" }
 -- Room.Info is the mapper's, listed so the log shows it. Char.Status rides the "Char"
--- subscription; Group.Info and the guild packages need their own top-level lines above. A guild
--- package (Guild.Strigoi) is only logged for now, to see its shape before a pane is built for it.
+-- subscription; Group.Info and the guild packages need their own top-level lines above. Every
+-- guild package is logged; only those in N.GUILD_PANES get the guild pane, which is built for them.
 N.EVENTS = { "Char.Vitals", "Char.Foe", "Comm.Channel.Text",
              "External.Discord.Info", "External.Discord.Status", "Room.Info",
-             "Char.Status", "Group.Info", "Guild.Strigoi" }
+             "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid" }
+N.GUILD_PANES = { Strigoi = true }
 N.seen = N.seen or {}
 
 local function say(s) cecho("\n<cyan>[nanny]: " .. s .. "\n<reset>") end
@@ -768,7 +769,7 @@ function N.on_event(_, ev)
   elseif name == "Comm.Channel.Text" then N.channel(v)
   elseif name == "Char.Status" then N.status(v)
   elseif name == "Group.Info" then N.party(v)
-  elseif name:match("^Guild%.") then N.guild(name, v) end
+  elseif N.GUILD_PANES[name:match("^Guild%.(.+)$") or ""] then N.guild(name, v) end
 end
 
 function N.hello()
@@ -985,7 +986,9 @@ N.vitals(at("Char.Vitals"))
 N.foe_show(at("Char.Foe"))
 N.status(at("Char.Status"))
 N.party(at("Group.Info"))
-for k, v in pairs(type(at("Guild")) == "table" and at("Guild") or {}) do N.guild("Guild." .. k, v) end
+for k, v in pairs(type(at("Guild")) == "table" and at("Guild") or {}) do
+  if N.GUILD_PANES[k] then N.guild("Guild." .. k, v) end
+end
 -- re-render the card every 20s so XP/hr stays live (and decays) between Char.Status messages
 if N.rateTimer then killTimer(N.rateTimer) ; N.rateTimer = nil end
 N.rateTimer = tempTimer(20, function() if next(N.st) then N.status(N.st) end end, true)
