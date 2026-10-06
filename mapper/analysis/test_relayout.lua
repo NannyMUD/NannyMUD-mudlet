@@ -74,6 +74,7 @@ local function pump()
 end
 
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 
 -- ------------------------------------------------------------- test fixtures
 -- Graphs are given as "id dir id" triples; every edge is added BOTH ways so the

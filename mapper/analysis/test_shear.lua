@@ -6,6 +6,7 @@
 --   cd nmp/client/lua && luajit ../analysis/test_shear.lua
 elro = {}
 for _, m in ipairs(dofile("modules.lua")) do dofile(m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 -- core.lua:102 verbatim; core.lua itself needs Mudlet, layout.lua does not.
 elro.delta = {
   north = { 0, 1, 0}, south = { 0,-1, 0}, east = { 1, 0, 0}, west = {-1, 0, 0},

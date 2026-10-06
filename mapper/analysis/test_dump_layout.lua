@@ -60,6 +60,7 @@ function tempTimer(_, fn) TID = TID + 1 ; TIMERS[TID] = fn ; return TID end
 function killTimer(id) TIMERS[id] = nil end
 
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 
 -- ⛔⛔ TRACECHECK/RENDERSTEP RENDER THE **LAST** COMPOSE, NOT THE BIGGEST ONE. `_stepLog` is reset
 -- per `compose_spqr_adj` (layout.lua, "mapstep replays ONE canvas"), and a dump whose area has

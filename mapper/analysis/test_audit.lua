@@ -6,6 +6,7 @@
 -- put at module scope. Run from nmp/client:
 --     luajit analysis/test_audit.lua
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 
 local fails, checks = 0, 0
 local function check(name, got, want)

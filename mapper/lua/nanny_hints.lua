@@ -18,6 +18,7 @@ elro.shippedHints = {
     [156] = "world",   -- banshee's road room
     [213] = "world",   -- caution's hair salon
     [139] = "world",   -- a tsc path room
+    [10]  = "world",   -- morgar's magic shop
   },
 }
 

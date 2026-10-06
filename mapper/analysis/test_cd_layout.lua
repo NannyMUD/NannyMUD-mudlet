@@ -62,6 +62,7 @@ function tempTimer(_, fn) TID = TID + 1 ; TIMERS[TID] = fn ; return TID end
 function killTimer(id) TIMERS[id] = nil end
 
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 elro.debug = false
 
 local LIVE = elro.count_defects                 -- already wrapped by the timing shim; that is fine

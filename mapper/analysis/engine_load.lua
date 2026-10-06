@@ -78,4 +78,5 @@ function run_timers()
 end
 
 for _, m in ipairs(dofile("lua/modules.lua")) do dofile("lua/" .. m) end
+elro.shippedHints = nil   -- NannyMUD's own merge hints are not test data
 
