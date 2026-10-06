@@ -1040,6 +1040,11 @@ function N.cmd(arg)
       say(N.SRC ~= "" and ("loading from " .. N.SRC) or "loading the built-in copy (no source file set).")
     else
       local path = rest == "off" and "" or rest:gsub("\\", "/")
+      if path ~= "" and not path:lower():match("%.lua$") then
+        say("'nanny src' takes the nannybasics.lua source file. To install a package file, use "
+          .. "'nanny update " .. path .. "'.")
+        return
+      end
       local fh = io.open(src_file(), "w")
       if fh then fh:write(path) ; fh:close() end
       N.SRC = path
