@@ -2030,10 +2030,10 @@ function elro.recenter(always)
     centerview(id)
     -- With two profiles moving at once (a party with follow), a repaint asked for here can be
     -- lost, and the map then shows the old position until the next move or a focus change.
-    -- Ask again once the burst is over; one timer for any number of moves.
+    -- Ask again just after (elro.recenterAgain s); one timer for any number of moves.
     if type(tempTimer) == "function" then
       if elro._cvAgain then killTimer(elro._cvAgain) end
-      elro._cvAgain = tempTimer(0.25, function()
+      elro._cvAgain = tempTimer(elro.recenterAgain or 0.05, function()
         elro._cvAgain = nil
         local at = elro.view_room()
         if at and roomExists(at) then
