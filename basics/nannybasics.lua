@@ -655,10 +655,18 @@ local function bars_max()
   local n = N.guildName == "Alchemy" and (type(g.slots) == "table" and g.slots.max) or g.pets_max
   return math.max(1, tonumber(n) or 1)
 end
+-- Alchemy lists each packed minion on a line of its own
+local function packed_count()
+  local n = 0
+  for _, m in pairs(type((N.gd or {}).minions) == "table" and N.gd.minions or {}) do
+    if type(m) == "table" and m.state == "packed" then n = n + 1 end
+  end
+  return n
+end
 local function guild_card_h()
   local row, txt = guild_dims()
   if BAR_GUILDS[N.guildName] then
-    local lines = N.guildName == "Alchemy" and 6 or 5
+    local lines = N.guildName == "Alchemy" and (5 + math.max(1, packed_count())) or 5
     return row * (1 + bars_max()) + math.floor(N.lh() * 1.35) * lines + 8
   end
   return row * 4 + txt
@@ -867,8 +875,12 @@ function N.render_alchemy(g)
   local cs = type(g.concoction_slots) == "table" and g.concoction_slots or {}
   local mins = type(g.minions) == "table" and g.minions or {}
   local max = bars_max()
-  if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another minion row
-  N.gHead:echo(string.format("<b>Minions %s/%s out</b> &#183; concoctions %s/%s",
+  -- a new slot, or a minion packed or called out, changes the pane's height
+  if max ~= N.gPetsMax or packed_count() ~= N.gPackedN then
+    N.gPetsMax, N.gPackedN = max, packed_count()
+    N.relayout()
+  end
+  N.gHead:echo(string.format("<b>Slots %s/%s</b> &#183; Held %s/%s",
     esc(sl.out or 0), esc(sl.max or "?"), esc(cs.held or 0), esc(cs.max or "?")))
   local names = {}
   for nm in pairs(mins) do names[#names + 1] = nm end
@@ -884,7 +896,7 @@ function N.render_alchemy(g)
       pet_row(shown):setValue(hp, 100, cap(nm) .. "  " .. hp .. "%" .. doing ..
         (tonumber(m.here) == 0 and "  (away)" or "") .. (tonumber(m.follow) == 0 and "  (staying)" or ""))
     elseif m.state == "packed" then
-      packed[#packed + 1] = nm
+      packed[#packed + 1] = { nm, math.max(0, math.min(tonumber(m.hp) or 0, 100)) }
     end
   end
   if N.gPetsShown ~= shown then
@@ -899,6 +911,14 @@ function N.render_alchemy(g)
   end
   table.sort(pots)
   local H = "color:#e0b64a; font-weight:bold;"
+  -- one line per packed minion, its HP amber below 75% and red below 40%
+  local prow = {}
+  for i, p in ipairs(packed) do
+    local c = (p[2] < 40 and "#d06060") or (p[2] < 75 and "#e0a030") or "#dddddd"
+    prow[#prow + 1] = string.format("<tr><td style='%s'>%s</td><td>%s</td>" ..
+      "<td align='right' style='color:%s;'>%d%%</td></tr>", H, i == 1 and "Packed" or "", esc(p[1]), c, p[2])
+  end
+  if #prow == 0 then prow[1] = string.format("<tr><td style='%s'>Packed</td><td>none</td><td></td></tr>", H) end
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
     "<tr><td style='%s'>Earth</td><td align='right'>%s</td><td width='16'></td><td style='%s'>Wind</td><td align='right'>%s</td></tr>" ..
@@ -908,11 +928,11 @@ function N.render_alchemy(g)
     -- the varying rows last, so their wrap moves nothing above them
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Concoctions</td><td>%s</td></tr>" ..
-    "<tr><td style='%s'>Packed</td><td>%s</td></tr>" ..
-    "</table>",
+    "</table>" ..
+    "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
+    "%s</table>",
     H, mat("earth"), H, mat("wind"), H, mat("water"), H, mat("metal"), H, mat("mercury"),
-    H, #pots > 0 and table.concat(pots, " &#183; ") or "none",
-    H, #packed > 0 and table.concat(packed, " &#183; ") or "none"))
+    H, #pots > 0 and table.concat(pots, " &#183; ") or "none", table.concat(prow)))
 end
 
 -- ================= wiring =========================================================
