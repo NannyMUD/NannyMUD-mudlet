@@ -133,4 +133,35 @@ check(not rec.stTxt:find(">NP<", 1, true), "no NP row")
 N.status({ level = 12, exp = 50000, baseexp = 40000, needexp = 10000 })
 check(not rec.stTitle:find("Paragon", 1, true) and rec.stXp[3] == "XP  50,000 / 60,000", "below 19: no paragon")
 
+-- the druid pane, from live payloads: a pet, fireflies on, barkskin on
+N.gHead, N.gGp, N.gPen, N.gWasp, N.gTxt = recorder("head"), recorder("gp"), recorder("pen"), recorder("wasp"), recorder("txt")
+local petRec = {}
+N.gPetRows[1] = setmetatable({}, { __index = function(t, k)
+  if k == "setValue" then return function(_, v, m, s) petRec = { v, m, s } end end
+  return function() return t end
+end })
+gmcp.Guild.Druid = { harmony = 0, arch = 0, tree = "Willow", staff = { fireflies = 1, wielded = 0, held = 1 },
+  pets = { { here = 1, hp = 100, name = "Squirrel" } }, pets_max = 1, effects = {},
+  barkskin = { on = 1, shimmering = 0 }, points = 30060, level = 5, wand = { held = 0 } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(N.guildName == "Druid" and MudletBorders.slots["nanny:guild"].title == "Druid", "pane retitled Druid")
+check(rec.head:find("<b>Level 5</b> &#183; Willow", 1, true) and not rec.head:find("Arch", 1, true),
+  "druid header: level and tree, not arch")
+check(rec.txt:find(">Points</td><td>30,060</td>", 1, true), "points, no bar")
+check(rec.txt:find("color:#70c070; font-weight:bold;'>barkskin", 1, true)
+  and rec.txt:find("color:#70c070; font-weight:bold;'>fireflies", 1, true)
+  and rec.txt:find("color:#555555;'>harmony", 1, true), "barkskin and fireflies lit, harmony dim")
+check(rec.txt:find(">staff</span>", 1, true) and rec.txt:find(">no wand</span>", 1, true), "gear: staff, no wand")
+check(rec.txt:find(">Pets</td><td>1/1</td>", 1, true), "pets 1/1")
+check(petRec[3] == "Squirrel  100%", "pet gauge " .. tostring(petRec[3]))
+check(not rec.txt:find("Effects", 1, true), "no effects row while there are none")
+gmcp.Guild.Druid = { arch = 1, barkskin = { on = 1, shimmering = 1 }, pets = { { here = 0, hp = 40, name = "Squirrel" } } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(rec.head:find("Arch Druid", 1, true), "arch druid marked")
+check(rec.txt:find("color:#e0a030; font-weight:bold;'>barkskin", 1, true), "shimmering barkskin turns amber")
+check(petRec[3] == "Squirrel  40%  (away)", "pet away " .. tostring(petRec[3]))
+gmcp.Guild.Alchemy = { level = 1 }
+N.on_event(nil, "gmcp.Guild.Alchemy")
+check(N.guildName == "Druid", "an Alchemy message is only logged, it does not take the pane")
+
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

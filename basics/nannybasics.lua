@@ -52,7 +52,7 @@ N.WANT = { "Char 1", "Comm.Channel 1", "External.Discord 1", "Group 1", "Guild 1
 N.EVENTS = { "Char.Vitals", "Char.Foe", "Comm.Channel.Text",
              "External.Discord.Info", "External.Discord.Status", "Room.Info",
              "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid" }
-N.GUILD_PANES = { Strigoi = true }
+N.GUILD_PANES = { Strigoi = true, Druid = true }
 N.seen = N.seen or {}
 
 local function say(s) cecho("\n<cyan>[nanny]: " .. s .. "\n<reset>") end
@@ -151,6 +151,8 @@ function N.relayout()
         MudletBorders.park("nanny:" .. nm)
       else
         local id = "nanny:" .. nm
+        -- the guild pane's height depends on which guild it is drawing
+        if nm == "guild" and N.guild_card_h then c.hint_h = N.guild_card_h() end
         local cross, hint = slot_spec(nm, MudletBorders.where(id) or
           MudletBorders.parked_cell(id) or N.place[nm])
         MudletBorders.slot("nanny:" .. nm, {
@@ -633,9 +635,10 @@ function N.party(v)
   end
 end
 
--- ================= guild: Guild.<Name>, e.g. Guild.Strigoi ==========================
--- A header (level, form, damage), gauges for guild points, the command penalty and the wasp,
--- then the rest as text. Built around Guild.Strigoi; a field another guild lacks is just blank.
+-- ================= guild: Guild.<Name> ============================================
+-- One pane, drawn by the guild's own renderer below. Strigoi: a header (level, form, damage),
+-- gauges for guild points, the command penalty and the wasp, then the rest as text. Druid: a
+-- header (level, tree, arch druid), one HP gauge per pet, then the rest as text.
 
 local function esc(s) return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 
@@ -643,7 +646,15 @@ local function guild_dims()
   local lh = N.lh()
   return math.floor(lh * 1.4), math.floor(lh * 1.35) * 7 + 8   -- a gauge row, the text block
 end
-local function guild_card_h() local row, txt = guild_dims() ; return row * 4 + txt end
+local function druid_pets_max() return math.max(1, tonumber(N.gd and N.gd.pets_max) or 1) end
+local function guild_card_h()
+  local row, txt = guild_dims()
+  if N.guildName == "Druid" then
+    return row * (1 + druid_pets_max()) + math.floor(N.lh() * 1.35) * 5 + 8
+  end
+  return row * 4 + txt
+end
+N.guild_card_h = guild_card_h
 
 local function style_guild()
   if not N.gTxt then return end
@@ -666,11 +677,34 @@ local function build_guild(box)
   style_guild()
 end
 
+-- One gauge per pet, made on first use in the guild pane and kept (a reload keeps the pane).
+N.gPetRows = N.gPetRows or {}
+local function pet_row(i)
+  if N.gPetRows[i] then return N.gPetRows[i] end
+  local g = Geyser.Gauge:new({ name = "NannyGuildPet" .. i, x = 0, y = 0, width = "100%", height = 10 },
+    N.comps.guild.box)
+  gauge_style(g, "#4f8f2f", "#18280f")
+  N.gPetRows[i] = g
+  return g
+end
+
 local function fit_guild(w, h)
   if not N.gTxt then return end
+  N.gW, N.gH = w, h
   local row = guild_dims()
-  fit_rows(h, { { N.gHead, row - 2, row }, { N.gGp, row - 2, row }, { N.gPen, row - 2, row },
-                { N.gWasp, row - 2, row } }, N.gTxt)
+  local strigoi = { N.gGp, N.gPen, N.gWasp }
+  local rows = { { N.gHead, row - 2, row } }
+  if N.guildName == "Druid" then
+    for _, gg in ipairs(strigoi) do pcall(function() gg:hide() end) end
+    for i, r in ipairs(N.gPetRows) do
+      if i <= (N.gPetsShown or 0) then rows[#rows + 1] = { r, row - 2, row }
+      else pcall(function() r:hide() end) end
+    end
+  else
+    for _, r in ipairs(N.gPetRows) do pcall(function() r:hide() end) end
+    for _, gg in ipairs(strigoi) do rows[#rows + 1] = { gg, row - 2, row } end
+  end
+  fit_rows(h, rows, N.gTxt)
 end
 
 -- the penalty bar turns amber, then red, as repeating yourself starts to cost
@@ -700,6 +734,7 @@ function N.guild(name, v)
   for k, val in pairs(v) do N.gd[k] = val end
   local g = N.gd
   if not N.gTxt then return end
+  if N.guildName == "Druid" then return N.render_druid(g) end
   local dmg = type(g.damage) == "table" and table.concat(g.damage, " / ") or tostring(g.damage or "")
   N.gHead:echo(string.format("<b>Level %s</b> &#183; %s &#183; <span style='color:#9a93b0;'>%s</span>",
     esc(g.level or "?"), esc(g.form or "?"), esc(dmg)))
@@ -756,6 +791,60 @@ function N.guild(name, v)
     H, tick,
     H, stat("str"), H, stat("int"), H, stat("dex"), H, stat("con"),
     H, #st, esc(g.stack_size or "?"), list(st, "empty")))
+end
+
+-- A buff as a tag: lit while on, amber while it is about to wear off, dim when off.
+local function tag(name, on, fading)
+  local c = (fading and "#e0a030") or (on and "#70c070") or "#555555"
+  return string.format("<span style='color:%s;%s'>%s</span>", c, on and " font-weight:bold;" or "", name)
+end
+
+-- Guild.Druid: level, points, tree, arch (whether you are the arch druid now), harmony,
+-- staff {held, wielded, fireflies}, wand {held}, barkskin {on, shimmering}, pets, effects.
+function N.render_druid(g)
+  N.gHead:echo(string.format("<b>Level %s</b> &#183; %s%s", esc(g.level or "?"), esc(g.tree or "?"),
+    tonumber(g.arch) == 1 and " &#183; <span style='color:#e0b64a;'><b>Arch Druid</b></span>" or ""))
+  local pets = type(g.pets) == "table" and g.pets or {}
+  local max = druid_pets_max()
+  if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another pet row
+  for i = 1, math.min(#pets, max) do
+    local p, row = pets[i], pet_row(i)
+    local hp = math.max(0, math.min(tonumber(p.hp) or 0, 100))
+    row:setValue(hp, 100, esc(p.name or "?") .. "  " .. hp .. "%" ..
+      (tonumber(p.here) == 1 and "" or "  (away)"))
+  end
+  if N.gPetsShown ~= math.min(#pets, max) then
+    N.gPetsShown = math.min(#pets, max)
+    if N.gW then fit_guild(N.gW, N.gH) end
+  end
+  local st = type(g.staff) == "table" and g.staff or {}
+  local bk = type(g.barkskin) == "table" and g.barkskin or {}
+  local hm = tonumber(g.harmony) or 0
+  local staff = tonumber(st.wielded) == 1 and "staff (wielded)" or (tonumber(st.held) == 1 and "staff" or nil)
+  local gear = {}
+  gear[#gear + 1] = staff and tag(staff, true) or tag("no staff", false)
+  gear[#gear + 1] = tag(tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1 and "wand" or "no wand",
+    tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1)
+  local buffs = {
+    tag("barkskin", tonumber(bk.on) == 1, tonumber(bk.shimmering) == 1),
+    tag("fireflies", tonumber(st.fireflies) == 1),
+    tag(hm > 1 and ("harmony " .. hm) or "harmony", hm > 0),
+  }
+  local H = "color:#e0b64a; font-weight:bold;"
+  local fx = list(g.effects, nil)
+  N.gTxt:echo(string.format(
+    "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
+    "<tr><td style='%s'>Points</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Buffs</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Gear</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Pets</td><td>%d/%d</td></tr>" ..
+    (fx and "<tr><td style='%s'>Effects</td><td>%s</td></tr>" or "%s%s") ..
+    "</table>",
+    H, commas(tonumber(g.points) or 0),
+    H, table.concat(buffs, " &#183; "),
+    H, table.concat(gear, " &#183; "),
+    H, #pets, max,
+    fx and H or "", fx or ""))
 end
 
 -- ================= wiring =========================================================
