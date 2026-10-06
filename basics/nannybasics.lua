@@ -648,25 +648,27 @@ local function guild_dims()
   local lh = N.lh()
   return math.floor(lh * 1.4), math.floor(lh * 1.35) * 7 + 8   -- a gauge row, the text block
 end
--- Druid and Alchemy draw one gauge per pet or minion out; room is kept for as many as allowed.
-local BAR_GUILDS = { Druid = true, Alchemy = true }
-local function bars_max()
-  local g = N.gd or {}
-  local n = N.guildName == "Alchemy" and (type(g.slots) == "table" and g.slots.max) or g.pets_max
-  return math.max(1, tonumber(n) or 1)
-end
--- Alchemy lists each packed minion on a line of its own
-local function packed_count()
+-- Alchemy minions in one state
+local function minions_in(state)
   local n = 0
   for _, m in pairs(type((N.gd or {}).minions) == "table" and N.gd.minions or {}) do
-    if type(m) == "table" and m.state == "packed" then n = n + 1 end
+    if type(m) == "table" and m.state == state then n = n + 1 end
   end
   return n
+end
+local function packed_count() return minions_in("packed") end
+-- Druid and Alchemy draw one gauge per pet or minion out: a Druid's room is kept for as many
+-- pets as allowed; an Alchemist's follows the minions out, since one called out leaves Packed.
+local BAR_GUILDS = { Druid = true, Alchemy = true }
+local function bars_max()
+  local n = N.guildName == "Alchemy" and minions_in("out") or (N.gd or {}).pets_max
+  return math.max(1, tonumber(n) or 1)
 end
 local function guild_card_h()
   local row, txt = guild_dims()
   if BAR_GUILDS[N.guildName] then
-    local lines = N.guildName == "Alchemy" and (5 + math.max(1, packed_count())) or 5
+    -- Alchemy: materials 3, concoctions 1, packed minions two to a line, and a spare
+    local lines = N.guildName == "Alchemy" and (5 + math.max(1, math.ceil(packed_count() / 2))) or 5
     return row * (1 + bars_max()) + math.floor(N.lh() * 1.35) * lines + 8
   end
   return row * 4 + txt
@@ -911,14 +913,18 @@ function N.render_alchemy(g)
   end
   table.sort(pots)
   local H = "color:#e0b64a; font-weight:bold;"
-  -- one line per packed minion, its HP amber below 75% and red below 40%
-  local prow = {}
-  for i, p in ipairs(packed) do
+  -- the packed minions two to a line, HP amber below 75% and red below 40%
+  local function cell(p)
+    if not p then return "<td></td><td></td>" end
     local c = (p[2] < 40 and "#d06060") or (p[2] < 75 and "#e0a030") or "#dddddd"
-    prow[#prow + 1] = string.format("<tr><td style='%s'>%s</td><td>%s</td>" ..
-      "<td align='right' style='color:%s;'>%d%%</td></tr>", H, i == 1 and "Packed" or "", esc(p[1]), c, p[2])
+    return string.format("<td>%s</td><td align='right' style='color:%s;'>%d%%</td>", esc(p[1]), c, p[2])
   end
-  if #prow == 0 then prow[1] = string.format("<tr><td style='%s'>Packed</td><td>none</td><td></td></tr>", H) end
+  local prow = {}
+  for i = 1, #packed, 2 do
+    prow[#prow + 1] = string.format("<tr><td style='%s'>%s</td>%s<td width='16'></td>%s</tr>",
+      H, i == 1 and "Packed" or "", cell(packed[i]), cell(packed[i + 1]))
+  end
+  if #prow == 0 then prow[1] = string.format("<tr><td style='%s'>Packed</td><td>none</td></tr>", H) end
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
     "<tr><td style='%s'>Earth</td><td align='right'>%s</td><td width='16'></td><td style='%s'>Wind</td><td align='right'>%s</td></tr>" ..

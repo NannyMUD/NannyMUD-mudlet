@@ -179,8 +179,11 @@ check(petRec[3] == "Golem  100%" and petRec2[3] == "Pelican  100%", "golem and p
 check(rec.txt:find(">Earth</td><td align='right'>2,056</td>", 1, true)
   and rec.txt:find(">Mercury</td><td align='right'>0</td>", 1, true), "materials grid")
 check(rec.txt:find(">Concoctions</td><td>nigredo &#215;1</td>", 1, true), "concoctions with counts")
-check(rec.txt:find(">Packed</td><td>camel</td><td align='right' style='color:#dddddd;'>100%</td>", 1, true)
-  and rec.txt:find("<td>ouroboros</td>", 1, true), "packed minions, one line each with HP")
+check(rec.txt:find(">Packed</td><td>camel</td><td align='right' style='color:#dddddd;'>100%</td>" ..
+  "<td width='16'></td><td>clockwork</td>", 1, true) and rec.txt:find("<td>ouroboros</td>", 1, true),
+  "packed minions two to a line, with HP")
+local _, lines = rec.txt:gsub("<tr>", "")
+check(lines == 3 + 1 + 2, "four packed minions take two lines (" .. lines .. " rows in all)")
 check(not rec.txt:find("mandrake", 1, true), "the mandrake (none) is not listed")
 gmcp.Guild.Alchemy = { minions = { camel = { hp = 30, state = "packed" }, clockwork = { hp = 60, state = "packed" } } }
 N.on_event(nil, "gmcp.Guild.Alchemy")
