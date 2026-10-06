@@ -849,10 +849,19 @@ end
 
 -- Every release carries both packages at one version, so one command updates both; `alone` is
 -- set when the mapper's update calls this, so the two do not call each other back.
-function N.update(alone)
+function N.update(alone, file)
   local now = os.time()
   if N._updAt and now - N._updAt < 30 then return end
   N._updAt = now
+  -- a local build (testing): swap it in, no download, the other package left alone
+  if file and file ~= "" then
+    file = file:gsub("\\", "/")
+    local fh = io.open(file, "rb")
+    if not fh then say("no such file: " .. file) return end
+    fh:close()
+    N.update_swap(file)
+    return
+  end
   if type(installPackage) ~= "function" or type(uninstallPackage) ~= "function"
      or type(downloadFile) ~= "function" then
     say("this Mudlet cannot update packages from a script. Get the new one by hand:\n  " .. N.UPDATE_URL)
@@ -921,8 +930,8 @@ function N.cmd(arg)
       parts[#parts + 1] = nm .. "=" .. tostring(cell or "hidden")
     end
     say("layout: " .. table.concat(parts, ", ") .. (N.logOn and "  (log shown)" or "  (log hidden)"))
-  elseif arg == "update" then
-    N.update()
+  elseif verb == "update" then
+    N.update(false, rest)
   elseif arg == "hello" then
     N.hello()
     say("asked the game for: " .. table.concat(N.WANT, ", "))
