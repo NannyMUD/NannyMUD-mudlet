@@ -638,7 +638,7 @@ end
 -- ================= guild: Guild.<Name> ============================================
 -- One pane, drawn by the guild's own renderer below. Strigoi: a header (level, form, damage),
 -- gauges for guild points, the command penalty and the wasp, then the rest as text. Druid: a
--- header (level, tree, arch druid), one HP gauge per pet, then the rest as text.
+-- header (level, tree), one HP gauge per pet, then the rest as text, arch among the buffs.
 
 local function esc(s) return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 
@@ -802,8 +802,7 @@ end
 -- Guild.Druid: level, points, tree, arch (whether you are the arch druid now), harmony,
 -- staff {held, wielded, fireflies}, wand {held}, barkskin {on, shimmering}, pets, effects.
 function N.render_druid(g)
-  N.gHead:echo(string.format("<b>Level %s</b> &#183; %s%s", esc(g.level or "?"), esc(g.tree or "?"),
-    tonumber(g.arch) == 1 and " &#183; <span style='color:#e0b64a;'><b>Arch Druid</b></span>" or ""))
+  N.gHead:echo(string.format("<b>Level %s</b> &#183; %s", esc(g.level or "?"), esc(g.tree or "?")))
   local pets = type(g.pets) == "table" and g.pets or {}
   local max = druid_pets_max()
   if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another pet row
@@ -826,6 +825,7 @@ function N.render_druid(g)
   gear[#gear + 1] = tag(tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1 and "wand" or "no wand",
     tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1)
   local buffs = {
+    tag("arch", tonumber(g.arch) == 1),
     tag("barkskin", tonumber(bk.on) == 1, tonumber(bk.shimmering) == 1),
     tag("fireflies", tonumber(st.fireflies) == 1),
     tag(hm > 1 and ("harmony " .. hm) or "harmony", hm > 0),

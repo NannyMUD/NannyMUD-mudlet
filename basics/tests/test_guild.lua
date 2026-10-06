@@ -145,8 +145,8 @@ gmcp.Guild.Druid = { harmony = 0, arch = 0, tree = "Willow", staff = { fireflies
   barkskin = { on = 1, shimmering = 0 }, points = 30060, level = 5, wand = { held = 0 } }
 N.on_event(nil, "gmcp.Guild.Druid")
 check(N.guildName == "Druid" and MudletBorders.slots["nanny:guild"].title == "Druid", "pane retitled Druid")
-check(rec.head:find("<b>Level 5</b> &#183; Willow", 1, true) and not rec.head:find("Arch", 1, true),
-  "druid header: level and tree, not arch")
+check(rec.head:find("<b>Level 5</b> &#183; Willow", 1, true), "druid header: level and tree")
+check(rec.txt:find("color:#555555;'>arch", 1, true), "arch dim while you are not the arch druid")
 check(rec.txt:find(">Points</td><td>30,060</td>", 1, true), "points, no bar")
 check(rec.txt:find("color:#70c070; font-weight:bold;'>barkskin", 1, true)
   and rec.txt:find("color:#70c070; font-weight:bold;'>fireflies", 1, true)
@@ -157,7 +157,7 @@ check(petRec[3] == "Squirrel  100%", "pet gauge " .. tostring(petRec[3]))
 check(not rec.txt:find("Effects", 1, true), "no effects row while there are none")
 gmcp.Guild.Druid = { arch = 1, barkskin = { on = 1, shimmering = 1 }, pets = { { here = 0, hp = 40, name = "Squirrel" } } }
 N.on_event(nil, "gmcp.Guild.Druid")
-check(rec.head:find("Arch Druid", 1, true), "arch druid marked")
+check(rec.txt:find("color:#70c070; font-weight:bold;'>arch", 1, true), "arch lit among the buffs")
 check(rec.txt:find("color:#e0a030; font-weight:bold;'>barkskin", 1, true), "shimmering barkskin turns amber")
 check(petRec[3] == "Squirrel  40%  (away)", "pet away " .. tostring(petRec[3]))
 gmcp.Guild.Alchemy = { level = 1 }
