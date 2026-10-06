@@ -160,8 +160,29 @@ N.on_event(nil, "gmcp.Guild.Druid")
 check(rec.txt:find("color:#70c070; font-weight:bold;'>arch", 1, true), "arch lit among the buffs")
 check(rec.txt:find("color:#e0a030; font-weight:bold;'>barkskin", 1, true), "shimmering barkskin turns amber")
 check(petRec[3] == "Squirrel  40%  (away)", "pet away " .. tostring(petRec[3]))
-gmcp.Guild.Alchemy = { level = 1 }
+-- the alchemy pane, from the live payload with the golem and the pelican called out
+local petRec2 = {}
+N.gPetRows[2] = setmetatable({}, { __index = function(t, k)
+  if k == "setValue" then return function(_, v, m, s) petRec2 = { v, m, s } end end
+  return function() return t end
+end })
+local out = { follow = 1, hp = 100, state = "out", foe = "", fighting = 0, here = 1, guiding = 0, camp = 0, chore = "" }
+gmcp.Guild.Alchemy = { materials = { earth = 2056, wind = 2087, mercury = 0, water = 1290, metal = 633 },
+  concoction_slots = { max = 42, held = 1 }, concoctions = { nigredo = 1 }, slots = { max = 3, out = 2 },
+  minions = { golem = out, pelican = out, clockwork = { hp = 100, state = "packed" },
+    mandrake = { state = "none" }, ouroboros = { hp = 100, state = "packed" },
+    camel = { hp = 100, state = "packed" }, homunculus = { hp = 100, state = "packed" } } }
 N.on_event(nil, "gmcp.Guild.Alchemy")
-check(N.guildName == "Druid", "an Alchemy message is only logged, it does not take the pane")
+check(N.guildName == "Alchemy" and MudletBorders.slots["nanny:guild"].title == "Alchemy", "pane retitled Alchemy")
+check(rec.head:find("Minions 2/3 out</b> &#183; concoctions 1/42", 1, true), "alchemy header " .. tostring(rec.head))
+check(petRec[3] == "Golem  100%" and petRec2[3] == "Pelican  100%", "golem and pelican bars, in name order")
+check(rec.txt:find(">Earth</td><td align='right'>2,056</td>", 1, true)
+  and rec.txt:find(">Mercury</td><td align='right'>0</td>", 1, true), "materials grid")
+check(rec.txt:find(">Potions</td><td>nigredo &#215;1</td>", 1, true), "potions with counts")
+check(rec.txt:find(">Flasks</td><td>camel &#183; clockwork &#183; homunculus &#183; ouroboros</td>", 1, true),
+  "packed minions in their flasks; the mandrake (none) is not listed")
+gmcp.Guild.Alchemy = { minions = { golem = { follow = 0, hp = 60, state = "out", foe = "a rat", fighting = 1, here = 0 } } }
+N.on_event(nil, "gmcp.Guild.Alchemy")
+check(petRec[3] == "Golem  60%  fighting a rat  (away)  (staying)", "golem fighting, away, staying: " .. tostring(petRec[3]))
 
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

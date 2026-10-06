@@ -52,7 +52,7 @@ N.WANT = { "Char 1", "Comm.Channel 1", "External.Discord 1", "Group 1", "Guild 1
 N.EVENTS = { "Char.Vitals", "Char.Foe", "Comm.Channel.Text",
              "External.Discord.Info", "External.Discord.Status", "Room.Info",
              "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid" }
-N.GUILD_PANES = { Strigoi = true, Druid = true }
+N.GUILD_PANES = { Strigoi = true, Druid = true, Alchemy = true }
 N.seen = N.seen or {}
 
 local function say(s) cecho("\n<cyan>[nanny]: " .. s .. "\n<reset>") end
@@ -639,6 +639,8 @@ end
 -- One pane, drawn by the guild's own renderer below. Strigoi: a header (level, form, damage),
 -- gauges for guild points, the command penalty and the wasp, then the rest as text. Druid: a
 -- header (level, tree), one HP gauge per pet, then the rest as text, arch among the buffs.
+-- Alchemy: a header (minions out, concoctions held), one HP gauge per minion out, then
+-- materials, concoctions and the minions waiting in their flasks.
 
 local function esc(s) return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 
@@ -646,11 +648,18 @@ local function guild_dims()
   local lh = N.lh()
   return math.floor(lh * 1.4), math.floor(lh * 1.35) * 7 + 8   -- a gauge row, the text block
 end
-local function druid_pets_max() return math.max(1, tonumber(N.gd and N.gd.pets_max) or 1) end
+-- Druid and Alchemy draw one gauge per pet or minion out; room is kept for as many as allowed.
+local BAR_GUILDS = { Druid = true, Alchemy = true }
+local function bars_max()
+  local g = N.gd or {}
+  local n = N.guildName == "Alchemy" and (type(g.slots) == "table" and g.slots.max) or g.pets_max
+  return math.max(1, tonumber(n) or 1)
+end
 local function guild_card_h()
   local row, txt = guild_dims()
-  if N.guildName == "Druid" then
-    return row * (1 + druid_pets_max()) + math.floor(N.lh() * 1.35) * 5 + 8
+  if BAR_GUILDS[N.guildName] then
+    local lines = N.guildName == "Alchemy" and 6 or 5
+    return row * (1 + bars_max()) + math.floor(N.lh() * 1.35) * lines + 8
   end
   return row * 4 + txt
 end
@@ -694,7 +703,7 @@ local function fit_guild(w, h)
   local row = guild_dims()
   local strigoi = { N.gGp, N.gPen, N.gWasp }
   local rows = { { N.gHead, row - 2, row } }
-  if N.guildName == "Druid" then
+  if BAR_GUILDS[N.guildName] then
     for _, gg in ipairs(strigoi) do pcall(function() gg:hide() end) end
     for i, r in ipairs(N.gPetRows) do
       if i <= (N.gPetsShown or 0) then rows[#rows + 1] = { r, row - 2, row }
@@ -735,6 +744,7 @@ function N.guild(name, v)
   local g = N.gd
   if not N.gTxt then return end
   if N.guildName == "Druid" then return N.render_druid(g) end
+  if N.guildName == "Alchemy" then return N.render_alchemy(g) end
   local dmg = type(g.damage) == "table" and table.concat(g.damage, " / ") or tostring(g.damage or "")
   N.gHead:echo(string.format("<b>Level %s</b> &#183; %s &#183; <span style='color:#9a93b0;'>%s</span>",
     esc(g.level or "?"), esc(g.form or "?"), esc(dmg)))
@@ -804,7 +814,7 @@ end
 function N.render_druid(g)
   N.gHead:echo(string.format("<b>Level %s</b> &#183; %s", esc(g.level or "?"), esc(g.tree or "?")))
   local pets = type(g.pets) == "table" and g.pets or {}
-  local max = druid_pets_max()
+  local max = bars_max()
   if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another pet row
   for i = 1, math.min(#pets, max) do
     local p, row = pets[i], pet_row(i)
@@ -845,6 +855,64 @@ function N.render_druid(g)
     H, table.concat(gear, " &#183; "),
     H, #pets, max,
     fx and H or "", fx or ""))
+end
+
+local function cap(s) s = tostring(s or "?") ; return s:sub(1, 1):upper() .. s:sub(2) end
+
+-- Guild.Alchemy: materials {earth, wind, water, metal, mercury}, concoctions {name = count} in
+-- concoction_slots {max, held}, and minions {name = {state "out"|"packed"|"none", hp, and when out
+-- follow, here, fighting, foe, chore, guiding, camp}}, at most slots.max of them out.
+function N.render_alchemy(g)
+  local sl = type(g.slots) == "table" and g.slots or {}
+  local cs = type(g.concoction_slots) == "table" and g.concoction_slots or {}
+  local mins = type(g.minions) == "table" and g.minions or {}
+  local max = bars_max()
+  if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another minion row
+  N.gHead:echo(string.format("<b>Minions %s/%s out</b> &#183; concoctions %s/%s",
+    esc(sl.out or 0), esc(sl.max or "?"), esc(cs.held or 0), esc(cs.max or "?")))
+  local names = {}
+  for nm in pairs(mins) do names[#names + 1] = nm end
+  table.sort(names)
+  local shown, packed = 0, {}
+  for _, nm in ipairs(names) do
+    local m = type(mins[nm]) == "table" and mins[nm] or {}
+    if m.state == "out" and shown < max then
+      shown = shown + 1
+      local hp = math.max(0, math.min(tonumber(m.hp) or 0, 100))
+      local doing = (tonumber(m.fighting) == 1 and ("  fighting " .. esc(m.foe ~= "" and m.foe or "?")))
+        or ((m.chore or "") ~= "" and ("  " .. esc(m.chore))) or ""
+      pet_row(shown):setValue(hp, 100, cap(nm) .. "  " .. hp .. "%" .. doing ..
+        (tonumber(m.here) == 0 and "  (away)" or "") .. (tonumber(m.follow) == 0 and "  (staying)" or ""))
+    elseif m.state == "packed" then
+      packed[#packed + 1] = nm
+    end
+  end
+  if N.gPetsShown ~= shown then
+    N.gPetsShown = shown
+    if N.gW then fit_guild(N.gW, N.gH) end
+  end
+  local mt = type(g.materials) == "table" and g.materials or {}
+  local function mat(k) return commas(tonumber(mt[k]) or 0) end
+  local pots = {}
+  for nm, n in pairs(type(g.concoctions) == "table" and g.concoctions or {}) do
+    pots[#pots + 1] = esc(nm) .. " &#215;" .. esc(n)
+  end
+  table.sort(pots)
+  local H = "color:#e0b64a; font-weight:bold;"
+  N.gTxt:echo(string.format(
+    "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
+    "<tr><td style='%s'>Earth</td><td align='right'>%s</td><td width='16'></td><td style='%s'>Wind</td><td align='right'>%s</td></tr>" ..
+    "<tr><td style='%s'>Water</td><td align='right'>%s</td><td></td><td style='%s'>Metal</td><td align='right'>%s</td></tr>" ..
+    "<tr><td style='%s'>Mercury</td><td align='right'>%s</td><td></td><td></td><td></td></tr>" ..
+    "</table>" ..
+    -- the varying rows last, so their wrap moves nothing above them
+    "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
+    "<tr><td style='%s'>Potions</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Flasks</td><td>%s</td></tr>" ..
+    "</table>",
+    H, mat("earth"), H, mat("wind"), H, mat("water"), H, mat("metal"), H, mat("mercury"),
+    H, #pots > 0 and table.concat(pots, " &#183; ") or "none",
+    H, #packed > 0 and table.concat(packed, " &#183; ") or "none"))
 end
 
 -- ================= wiring =========================================================
