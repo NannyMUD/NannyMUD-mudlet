@@ -178,9 +178,9 @@ check(rec.head:find("Minions 2/3 out</b> &#183; concoctions 1/42", 1, true), "al
 check(petRec[3] == "Golem  100%" and petRec2[3] == "Pelican  100%", "golem and pelican bars, in name order")
 check(rec.txt:find(">Earth</td><td align='right'>2,056</td>", 1, true)
   and rec.txt:find(">Mercury</td><td align='right'>0</td>", 1, true), "materials grid")
-check(rec.txt:find(">Potions</td><td>nigredo &#215;1</td>", 1, true), "potions with counts")
-check(rec.txt:find(">Flasks</td><td>camel &#183; clockwork &#183; homunculus &#183; ouroboros</td>", 1, true),
-  "packed minions in their flasks; the mandrake (none) is not listed")
+check(rec.txt:find(">Concoctions</td><td>nigredo &#215;1</td>", 1, true), "concoctions with counts")
+check(rec.txt:find(">Packed</td><td>camel &#183; clockwork &#183; homunculus &#183; ouroboros</td>", 1, true),
+  "packed minions; the mandrake (none) is not listed")
 gmcp.Guild.Alchemy = { minions = { golem = { follow = 0, hp = 60, state = "out", foe = "a rat", fighting = 1, here = 0 } } }
 N.on_event(nil, "gmcp.Guild.Alchemy")
 check(petRec[3] == "Golem  60%  fighting a rat  (away)  (staying)", "golem fighting, away, staying: " .. tostring(petRec[3]))

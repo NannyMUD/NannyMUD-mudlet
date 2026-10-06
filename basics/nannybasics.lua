@@ -640,7 +640,7 @@ end
 -- gauges for guild points, the command penalty and the wasp, then the rest as text. Druid: a
 -- header (level, tree), one HP gauge per pet, then the rest as text, arch among the buffs.
 -- Alchemy: a header (minions out, concoctions held), one HP gauge per minion out, then
--- materials, concoctions and the minions waiting in their flasks.
+-- materials, concoctions and the packed minions.
 
 local function esc(s) return (tostring(s):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;")) end
 
@@ -907,8 +907,8 @@ function N.render_alchemy(g)
     "</table>" ..
     -- the varying rows last, so their wrap moves nothing above them
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
-    "<tr><td style='%s'>Potions</td><td>%s</td></tr>" ..
-    "<tr><td style='%s'>Flasks</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Concoctions</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>Packed</td><td>%s</td></tr>" ..
     "</table>",
     H, mat("earth"), H, mat("wind"), H, mat("water"), H, mat("metal"), H, mat("mercury"),
     H, #pots > 0 and table.concat(pots, " &#183; ") or "none",
