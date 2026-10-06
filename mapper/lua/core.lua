@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
 -- which refuses to build if the two differ.
-elro.VERSION = "0.7.0"
+elro.VERSION = "0.7.1"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
