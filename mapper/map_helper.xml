@@ -91,6 +91,21 @@ elro.rec_start(a)</script>
 					<regex>^maprecordmove ?(.*)$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>maprecordroute</name>
+				<script>local a = (matches[2] or ""):gsub("^%s+", ""):gsub("%s+$", "")
+elro.route_start(a)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^maprecordroute ?(.*)$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>maprecordundo</name>
+				<script>elro.rec_undo()</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^maprecordundo$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>maphelp</name>
 				<script>elro.with_rest(matches[2], elro.map_help)</script>
 				<command></command>

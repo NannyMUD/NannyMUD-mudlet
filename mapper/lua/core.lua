@@ -5155,7 +5155,22 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
   -- finalize an in-progress maprecordmove, but only if this move is the one
   -- that was armed; a move the mapper never saw (move_object) leaves
   -- elro.current stale, so a mismatch abandons the recording loudly.
-  if elro.rec then
+  if elro.rec and elro.rec.route then
+    -- a route ends on the first room back on the map, reached from rooms it does not show
+    local r = elro.rec
+    if (not fromId or fromId == 0) and id ~= r.from then
+      elro.rec_finish(id)
+    else
+      elro.rec_clear()
+      cecho("\n<red>[elro]: route abandoned: " ..
+            ((fromId == r.from) and ("its first step led to a mapped room (" .. id ..
+              "). maprecordroute is for a way through rooms the map does not show; " ..
+              "record mapped steps with maprecordmove.")
+            or (id == r.from) and "it came back to where it started."
+            or ("it came out from mapped room " .. tostring(fromId) .. ", not from the unmapped stretch.")) ..
+            "\n<reset>")
+    end
+  elseif elro.rec then
     if fromId and fromId ~= 0 and elro.rec.from == fromId then
       elro.rec_finish(id)
     else
@@ -5440,7 +5455,76 @@ function elro.rec_finish(to)
   end
   local from = r.from
   elro.rec_clear()
+  if elro.smap == nil then elro.load_smap() end
+  local prev = elro.smap[from .. ":" .. to]
   elro.record_edge(from, to, r.cmds)
+  -- what maprecordundo takes back, and what it puts back
+  elro.lastRec = { from = from, to = to, prev = prev, joined = table.concat(r.cmds, elro.SDELIM) }
+  cecho("<cyan>[elro]: one way only: " .. from .. " -> " .. to .. ". 'maprecordundo' takes it back.\n<reset>")
+end
+
+-- maprecordundo: take back the edge the last maprecordmove or maprecordroute recorded, and
+-- put back the recording it replaced, if any.
+function elro.rec_undo()
+  local u = elro.lastRec
+  if not u then cecho("\n<yellow>[elro]: nothing recorded this session to take back.\n<reset>") return end
+  elro.lastRec = nil
+  if elro.smap == nil then elro.load_smap() end
+  local key = u.from .. ":" .. u.to
+  if elro.smap[key] ~= u.joined then
+    cecho("\n<yellow>[elro]: edge " .. key .. " has changed since; nothing taken back.\n<reset>") return
+  end
+  if type(removeSpecialExit) == "function" and roomExists(u.from) then
+    -- Mudlet removes a special exit by its command, not its destination
+    for _, e in ipairs(elro.special_list(u.from)) do
+      if e.to == u.to then pcall(removeSpecialExit, u.from, e.cmd) end
+    end
+  end
+  elro.smap[key] = u.prev
+  if u.prev and type(addSpecialExit) == "function" then pcall(addSpecialExit, u.from, u.to, u.prev) end
+  elro.smap_index_dirty()
+  elro.save_smap()
+  elro.glyph_room(u.from)
+  cecho("\n<green>[elro]: took back " .. u.from .. " -> " .. u.to ..
+        (u.prev and (", the earlier recording is back: " .. table.concat(smap_split(u.prev), " , ")) or "") ..
+        ".\n<reset>")
+end
+
+-- maprecordroute a,b,c: the known way through rooms the map does not show (a maze that is
+-- blocked), as one edge from here to the first mapped room it comes out in. The mapper sends
+-- the steps itself, so nothing else typed ends up in the route. Short by design.
+elro.routeMax = elro.routeMax or 20
+function elro.route_start(arg)
+  if arg == "cancel" then return elro.rec_start("cancel") end
+  local steps = {}
+  for s in ((arg or "") .. ","):gmatch("([^,]*),") do
+    s = s:gsub("^%s+", ""):gsub("%s+$", "")
+    if s ~= "" then steps[#steps + 1] = s end
+  end
+  if #steps == 0 then
+    cecho("\n<yellow>[elro]: usage: maprecordroute <step>,<step>,...  e.g. maprecordroute n,e,climb tree,s\n<reset>")
+    return
+  end
+  if #steps > elro.routeMax then
+    cecho("\n<red>[elro]: " .. #steps .. " steps is too long for one edge (at most " .. elro.routeMax ..
+          "). Record a shorter stretch.\n<reset>")
+    return
+  end
+  if not elro.current then
+    cecho("\n<red>[elro]: current room unknown; move once first.\n<reset>") return
+  end
+  elro.rec_clear()
+  elro.rec = { from = elro.current, cmds = steps, route = true }
+  cecho("\n<cyan>[elro]: recording a route from room " .. elro.current .. ": " ..
+        table.concat(steps, ", ") .. " -- waiting to come out on the map...\n<reset>")
+  for _, c in ipairs(steps) do send(c) end
+  local secs = elro.rec_timeout or 12
+  elro.rec.timer = tempTimer(secs, function()
+    if elro.rec then
+      elro.rec_clear()
+      cecho("\n<red>[elro]: route recording timed out (never came out on the map).\n<reset>")
+    end
+  end)
 end
 
 function elro.rec_start(arg)
@@ -5898,6 +5982,8 @@ local HELP_BASIC = {
   { "mapdelroom <id>|sel", "delete a room and every edge to or from it, then relayout; 'sel' = every room selected in the mapper (also in its right-click menu). Use this rather than Mudlet's own delete: it clears the room's records and drawn lines too" },
   { "mapdeledge <f> <t>", "delete all edges from room f to room t (compass + special)" },
   { "maprecordmove [cmd]","record a special or multi-step exit (bare = capture interactively)" },
+  { "maprecordroute a,b,c", "record the known way through rooms the map does not show (a blocked maze) as one edge, one way" },
+  { "maprecordundo",      "take back the edge just recorded (and restore the one it replaced)" },
   { "mapmerge <area>",    "merge that area into the one you are standing in" },
   { "mapunmerge <area>",  "undo a merge, yours or one the game suggested   (mapmerges = list both)" },
   { "maphints [on|off [area]]", "the game may suggest drawing an area on another map (a town built by several wizards). Follow the suggestions or not, for all areas or one; bare = list them" },
