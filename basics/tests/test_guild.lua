@@ -59,12 +59,13 @@ check(rec.txt and rec.txt:find(">Str</td><td align='right'>?</td>", 1, true), "n
 check(not rec.txt:find("#6fb8e0", 1, true), "empty temp: no harvest parenthesis")
 
 -- a later message with penalty, a stack, a stat change, a harvest gain, wasp gone
-gmcp.Guild.Strigoi = { penalty = 40, stack = { "claw", "bite" }, str = 2, con = -1,
+gmcp.Guild.Strigoi = { penalty = 40, stack = { "claw", "drain" }, str = 2, con = -1,
   int = 3, wasp = { out = 0, hp = 0, maxhp = 120, level = 8 }, temp = { int = 3 } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.pen[3] == "Penalty  40%" and N.gPenCol == "#b03030", "penalty 40% turns red")
 check(rec.wasp[3] == "Wasp: not out", "wasp not out")
-check(rec.txt:find("2/6 &#183; claw &#183; bite", 1, true), "stack shows claw, bite")
+check(rec.txt:find("2/6 &#183; claw <span style='font-size:13pt;'>🩸</span>", 1, true),
+  "stack: claw as text (no icon), drain as its icon")
 check(rec.txt:find(">Int</td><td align='right'>? <span style='color:#6fb8e0;'>(+3)</span>", 1, true),
   "harvest-only change: no guild parenthesis, harvest in its own colour")
 check(rec.txt:find("? <span style='color:#70c070;'>(+2)</span>", 1, true), "no base stats yet: ? and the change")
@@ -90,6 +91,51 @@ N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.gp[1] == 121920430 - 118958126 and rec.gp[2] == 121920430 + 7894907 - 118958126,
   "GP bar fills within the level")
 check(rec.gp[3] == "GP  121,920,430 / 129,815,337", "GP label cumulative " .. tostring(rec.gp[3]))
+
+-- cooldowns: a length is learned from when a name comes and goes; the wasp and the
+-- *_cast_timestamp twins are not cooldowns
+local clock = 1000
+getEpoch = function() return clock end
+local cdRec = {}
+for i = 1, 3 do
+  N.gCdRows[i] = setmetatable({}, { __index = function(t, k)
+    if k == "setValue" then return function(_, v, m, s) cdRec[i] = { v, m, s } end end
+    if k == "front" or k == "back" or k == "text" then return any end
+    return function() return t end
+  end })
+end
+gmcp.Guild.Strigoi = { active = { "wasp", "shift", "shift_cast_timestamp" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.gCdShown == 1 and cdRec[1][3] == "🔄  shift  0s, learning", "one bar, shift, learning: " .. tostring(cdRec[1][3]))
+clock = 1030
+gmcp.Guild.Strigoi = { active = { "wasp" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.cdLearned.shift and N.cdLearned.shift[1] == 30, "shift learned as 30 s")
+check(cdRec[1][3] == "🔄  shift  ready" and cdRec[1][1] == 1 and cdRec[1][2] == 1, "shift ready, bar full")
+clock = 2000
+gmcp.Guild.Strigoi = { active = { "shift", "shift_cast_timestamp" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+clock = 2010
+N.draw_cooldowns()
+check(cdRec[1][3] == "🔄  shift  20s" and cdRec[1][1] == 10 and cdRec[1][2] == 30, "ten seconds in: 20s left, bar a third full")
+gmcp.Guild.Strigoi = { active = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+-- running before the session's first message: its start is unknown, so nothing is learned
+N.cdPrimed = false
+clock = 3000
+gmcp.Guild.Strigoi = { active = { "neutrino" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+clock = 3005
+gmcp.Guild.Strigoi = { active = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.cdLearned.neutrino == nil and N.gCdShown == 1, "a cooldown already running at the start teaches nothing")
+check(#N.cdLearned.shift == 2 and N.cdLearned.shift[2] == 10, "second timing of shift kept: 10 s")
+gmcp.Guild.Strigoi = { active = { "purge_of_flesh", "shadow_curse" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(cdRec[1][3]:find("^🍖  purge of flesh") and cdRec[2][3]:find("^🪱  shadow curse"),
+  "an icon found by the first word: purge, shadow")
+gmcp.Guild.Strigoi = { active = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
 
 -- a squeezed pane must not draw past its box: rows that do not fit are hidden
 local function tracker()

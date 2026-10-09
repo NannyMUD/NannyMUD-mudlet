@@ -671,7 +671,7 @@ local function guild_card_h()
     local lines = N.guildName == "Alchemy" and (5 + math.max(1, math.ceil(packed_count() / 2))) or 5
     return row * (1 + bars_max()) + math.floor(N.lh() * 1.35) * lines + 8
   end
-  return row * 4 + txt
+  return row * (4 + (N.gCdShown or 0)) + txt
 end
 N.guild_card_h = guild_card_h
 
@@ -707,6 +707,113 @@ local function pet_row(i)
   return g
 end
 
+-- An icon per Strigoi power, looked up by the whole name, then its first word ("shadow_curse"
+-- finds shadow). Only emoji that need no variation selector, so they draw on every platform.
+N.STRIGOI_ICONS = {
+  drain = "🩸", foresee = "🔮", mark = "🎯", soultick = "⏳", evaluate = "🔍", morph = "🎭",
+  bane = "🐌", hemal = "🧲", phantom = "👻", phantom_claws = "🐾", phantom_rend = "💥",
+  phantom_vitalash = "💗", phantom_wraith = "👻", revivus = "✨", graveveil = "🪦", shift = "🔄",
+  harvest = "🌾", purge = "🍖", shadow = "🪱", timewrap = "⌛", wasp = "🐝", wither = "🥀",
+  prescience = "👀", vex = "⚡", vex_of_the_mighty = "💪", vex_of_the_storm = "🌀",
+  vex_of_the_sage = "📖", vex_of_the_steadfast = "⚓", vex_of_the_unbroken = "🗿",
+  ["vex_of_the_sharp-eyed"] = "🦅", acidic = "🧪", rejuvenate = "💚", skullburst = "💀",
+  neutrino = "💫", soulstrike = "🔱", umbra = "🌑", wildbound = "🐺", wildbound_razorwind = "💨",
+  wildbound_stoneform = "🪨", wildbound_ghostveil = "👤", wildbound_ironmaw = "🦈",
+  soulhail = "🧊", embrace = "🦇",
+}
+local function power_icon(name)
+  local k = tostring(name):lower():gsub("%s+", "_")
+  return N.STRIGOI_ICONS[k] or N.STRIGOI_ICONS[k:match("^[^_]+")]
+end
+
+-- Strigoi cooldowns: every name in "active" but the wasp (it has its own gauge) and the
+-- *_cast_timestamp twins. The game sends no times, so each cooldown's length is learned from
+-- when its name comes and goes: the median of the last few, kept in the profile directory.
+local CD_SKIP, CD_KEEP = { wasp = true }, 5
+local function cd_file() return getMudletHomeDir() .. "/nanny_cooldowns.lua" end
+if not N.cdLearned then
+  N.cdLearned = {}
+  if type(table.load) == "function" then pcall(table.load, cd_file(), N.cdLearned) end
+end
+N.cdOn = N.cdOn or {}          -- name -> { t = when it appeared, clean = its start was seen }
+N.gCdRows = N.gCdRows or {}
+
+local function cd_length(name)
+  local s = N.cdLearned[name]
+  if type(s) ~= "table" or #s == 0 then return nil end
+  local c = {}
+  for i, d in ipairs(s) do c[i] = d end
+  table.sort(c)
+  return c[math.ceil(#c / 2)]
+end
+
+-- every cooldown known, learned or running now, in a fixed order
+local function cd_names()
+  local seen, out = {}, {}
+  for k in pairs(N.cdLearned) do seen[k] = true end
+  for k in pairs(N.cdOn) do seen[k] = true end
+  for k in pairs(seen) do out[#out + 1] = k end
+  table.sort(out)
+  return out
+end
+
+function N.track_cooldowns(active)
+  if type(active) ~= "table" then return end
+  local now, cur = getEpoch(), {}
+  for _, x in ipairs(active) do
+    local k = tostring(x)
+    if not CD_SKIP[k] and not k:match("_cast_timestamp$") then cur[k] = true end
+  end
+  -- the first message of a session finds cooldowns already running, started who knows when
+  for k in pairs(cur) do
+    if not N.cdOn[k] then N.cdOn[k] = { t = now, clean = N.cdPrimed == true } end
+  end
+  for k, on in pairs(N.cdOn) do
+    if not cur[k] then
+      if on.clean then
+        local s = N.cdLearned[k] or {}
+        s[#s + 1] = math.floor(now - on.t + 0.5)
+        while #s > CD_KEEP do table.remove(s, 1) end
+        N.cdLearned[k] = s
+        if type(table.save) == "function" then pcall(table.save, cd_file(), N.cdLearned) end
+      end
+      N.cdOn[k] = nil
+    end
+  end
+  N.cdPrimed = true
+end
+
+local function cd_row(i)
+  if N.gCdRows[i] then return N.gCdRows[i] end
+  local g = Geyser.Gauge:new({ name = "NannyGuildCd" .. i, x = 0, y = 0, width = "100%", height = 10 },
+    N.comps.guild.box)
+  N.gCdRows[i] = g
+  return g
+end
+
+-- A bar per cooldown, filling as it recharges: full and green when ready. Until a length is
+-- learned, a running one counts up instead.
+function N.draw_cooldowns()
+  if not (N.comps.guild and N.comps.guild.box) then return end
+  local names, now = cd_names(), getEpoch()
+  for i, k in ipairs(names) do
+    local g, on, len = cd_row(i), N.cdOn[k], cd_length(k)
+    local icon = power_icon(k)
+    local label, col = (icon and icon .. "  " or "") .. k:gsub("_", " "), "#4a5a9a"
+    if not on then
+      col = "#3a8f3a"
+      g:setValue(1, 1, label .. "  ready")
+    elseif len then
+      local left = math.max(0, math.ceil(on.t + len - now))
+      g:setValue(math.max(0, len - left), math.max(len, 1), label .. "  " .. left .. "s")
+    else
+      g:setValue(0, 1, label .. "  " .. math.floor(now - on.t) .. "s, learning")
+    end
+    if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, "#16182a") end
+  end
+  if #names ~= (N.gCdShown or 0) then N.gCdShown = #names ; N.relayout() end   -- a new row
+end
+
 local function fit_guild(w, h)
   if not N.gTxt then return end
   N.gW, N.gH = w, h
@@ -715,6 +822,7 @@ local function fit_guild(w, h)
   local rows = { { N.gHead, row - 2, row } }
   if BAR_GUILDS[N.guildName] then
     for _, gg in ipairs(strigoi) do pcall(function() gg:hide() end) end
+    for _, r in ipairs(N.gCdRows) do pcall(function() r:hide() end) end
     for i, r in ipairs(N.gPetRows) do
       if i <= (N.gPetsShown or 0) then rows[#rows + 1] = { r, row - 2, row }
       else pcall(function() r:hide() end) end
@@ -722,6 +830,10 @@ local function fit_guild(w, h)
   else
     for _, r in ipairs(N.gPetRows) do pcall(function() r:hide() end) end
     for _, gg in ipairs(strigoi) do rows[#rows + 1] = { gg, row - 2, row } end
+    for i, r in ipairs(N.gCdRows) do
+      if i <= (N.gCdShown or 0) then rows[#rows + 1] = { r, row - 2, row }
+      else pcall(function() r:hide() end) end
+    end
   end
   fit_rows(h, rows, N.gTxt)
 end
@@ -742,6 +854,18 @@ local function list(t, empty)
   return table.concat(out, " &#183; ")
 end
 
+-- the stack as a row of icons; a name with no icon yet is shown as text
+local function stack_icons(st)
+  if #st == 0 then return "empty" end
+  local out = {}
+  for i, x in ipairs(st) do
+    local name = type(x) == "table" and json(x) or tostring(x)
+    local icon = power_icon(name)
+    out[i] = icon and ("<span style='font-size:13pt;'>" .. icon .. "</span>") or esc(name)
+  end
+  return table.concat(out, " ")
+end
+
 N.gd = N.gd or {}
 function N.guild(name, v)
   if type(v) ~= "table" then return end
@@ -751,6 +875,7 @@ function N.guild(name, v)
     N.relayout()                       -- first message (or a new guild): place the pane, retitle it
   end
   for k, val in pairs(v) do N.gd[k] = val end
+  if gname == "Strigoi" then N.track_cooldowns(v.active) end
   local g = N.gd
   if not N.gTxt then return end
   if N.guildName == "Druid" then return N.render_druid(g) end
@@ -775,6 +900,7 @@ function N.guild(name, v)
   else
     N.gWasp:setValue(0, 1, "Wasp: not out")
   end
+  N.draw_cooldowns()
   -- Char.Status sends base stats; the guild sends its total change, of which temp is the part
   -- from harvest. Shown as total (guild) (harvest).
   local temp = type(g.temp) == "table" and g.temp or {}
@@ -796,7 +922,6 @@ function N.guild(name, v)
   local H = "color:#e0b64a; font-weight:bold;"
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
-    "<tr><td style='%s'>Active</td><td>%s</td></tr>" ..
     "<tr><td style='%s'>Soultick</td><td>%s</td></tr>" ..
     "</table>" ..
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
@@ -807,10 +932,9 @@ function N.guild(name, v)
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Stack</td><td>%d/%s &#183; %s</td></tr>" ..
     "</table>",
-    H, list(g.active, "none"),
     H, tick,
     H, stat("str"), H, stat("int"), H, stat("dex"), H, stat("con"),
-    H, #st, esc(g.stack_size or "?"), list(st, "empty")))
+    H, #st, esc(g.stack_size or "?"), stack_icons(st)))
 end
 
 -- A buff as a tag: lit while on, amber while it is about to wear off, dim when off.
@@ -1189,6 +1313,11 @@ end
 -- re-render the card every 20s so XP/hr stays live (and decays) between Char.Status messages
 if N.rateTimer then killTimer(N.rateTimer) ; N.rateTimer = nil end
 N.rateTimer = tempTimer(20, function() if next(N.st) then N.status(N.st) end end, true)
+-- count the Strigoi cooldown bars down between messages
+if N.cdTimer then killTimer(N.cdTimer) ; N.cdTimer = nil end
+N.cdTimer = tempTimer(1, function()
+  if N.guildName == "Strigoi" and next(N.cdOn) then N.draw_cooldowns() end
+end, true)
 N.relayout()
 N.register()
 if N.alias then killAlias(N.alias) end
