@@ -174,6 +174,14 @@ clock = 3005
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(N.cd.learned.neutrino == nil and N.gCdShown == 1, "a cooldown already running at the start teaches nothing")
+-- the totem: no bar, and a length learned for it earlier is not shown either
+N.cd.learned.totem = { 2 }
+gmcp.Guild.Strigoi = { active = { "totem", "totem_cast_timestamp" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.cd.on.totem == nil and N.gCdShown == 1, "totem: no bar, none tracked")
+N.cd.learned.totem = nil
+gmcp.Guild.Strigoi = { active = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
 check(#N.cd.learned.shift == 2 and N.cd.learned.shift[2] == 10, "second timing of shift kept: 10 s")
 gmcp.Guild.Strigoi = { active = { "purge_of_flesh", "shadow_curse" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")

@@ -902,19 +902,23 @@ local function timer_set(file)
   return T
 end
 
--- Strigoi cooldowns: every name in "active" but the wasp (it has its own gauge) and the
--- *_cast_timestamp twins. Druid buffs: barkskin, from its "on".
+-- Strigoi cooldowns: every name in "active" but the wasp (it has its own gauge), the totem
+-- (two seconds, not worth a bar) and the *_cast_timestamp twins, matched by first word.
+-- Druid buffs: barkskin, from its "on".
 N.cd = N.cd or timer_set("nanny_cooldowns.lua")
 N.buffs = N.buffs or timer_set("nanny_buffs.lua")
 N.gCdRows = N.gCdRows or {}
-local CD_SKIP = { wasp = true }
+local CD_SKIP = { wasp = true, totem = true }
+local function cd_skip(k)
+  return CD_SKIP[k:match("^[^_]+")] or k:match("_cast_timestamp$")
+end
 
 function N.track_cooldowns(active)
   if type(active) ~= "table" then return end
   local cur = {}
   for _, x in ipairs(active) do
     local k = tostring(x)
-    if not CD_SKIP[k] and not k:match("_cast_timestamp$") then cur[k] = true end
+    if not cd_skip(k) then cur[k] = true end
   end
   N.cd.update(cur)
 end
@@ -974,7 +978,9 @@ end
 -- running one counts up instead.
 function N.draw_cooldowns()
   if not (N.comps.guild and N.comps.guild.box) then return end
-  local names, now = N.cd.names(), getEpoch()
+  -- the skip list also hides a length learned before a name joined it
+  local names, now = {}, getEpoch()
+  for _, k in ipairs(N.cd.names()) do if not cd_skip(k) then names[#names + 1] = k end end
   for i, k in ipairs(names) do
     local g, on, len = cd_row(i), N.cd.on[k], N.cd.length(k)
     local icon, dark = icon_html(k, true), N.iconSet == "dark"
