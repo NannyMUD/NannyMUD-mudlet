@@ -52,7 +52,7 @@ N.WANT = { "Char 1", "Comm.Channel 1", "External.Discord 1", "Group 1", "Guild 1
 N.EVENTS = { "Char.Vitals", "Char.Foe", "Comm.Channel.Text",
              "External.Discord.Info", "External.Discord.Status", "Room.Info",
              "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid",
-             "Guild.Vampire" }
+             "Guild.Vampire", "Guild.Druid.Owl" }
 N.GUILD_PANES = { Strigoi = true, Druid = true, Alchemy = true, Vampire = true }
 N.seen = N.seen or {}
 
@@ -1030,7 +1030,8 @@ function N.guild(name, v)
     N.gd, N.guildName = {}, gname
     N.relayout()                       -- first message (or a new guild): place the pane, retitle it
   end
-  for k, val in pairs(v) do N.gd[k] = val end
+  -- Owl is Guild.Druid.Owl's own message, kept under Guild.Druid by Mudlet
+  for k, val in pairs(v) do if k ~= "Owl" then N.gd[k] = val end end
   if gname == "Strigoi" then N.track_cooldowns(v.active) end
   local g = N.gd
   if gname == "Vampire" then N.blood(g.bp, g.maxbp) end
@@ -1105,8 +1106,34 @@ local DRUID_SHOWN = { arch_druid = true }   -- the arch tag among the buffs
 
 -- Guild.Druid: level, points, tree, arch (whether you are the arch druid now), harmony,
 -- staff {held, wielded, fireflies}, wand {held}, barkskin {on, shimmering}, pets, effects.
+-- The spells stored in the wand, from 'help druids gmcp' (shape not yet seen): any list or
+-- mapping under wand but "held", as names, or "name xN" for counts.
+local function wand_spells(w)
+  local out = {}
+  for k, val in pairs(w) do
+    if k ~= "held" then
+      if type(val) == "table" then
+        if #val > 0 then
+          for _, s in ipairs(val) do out[#out + 1] = esc(type(s) == "table" and json(s) or s) end
+        else
+          for name, n in pairs(val) do
+            out[#out + 1] = esc(name) .. ((tonumber(n) or 1) > 1 and (" &#215;" .. n) or "")
+          end
+        end
+      elseif type(k) == "number" then out[#out + 1] = esc(val)
+      else out[#out + 1] = esc(k) .. " " .. esc(val) end
+    end
+  end
+  table.sort(out)
+  return out
+end
+
 function N.render_druid(g)
-  N.gHead:echo(string.format("<b>Level %s</b> &#183; %s", esc(g.level or "?"), esc(g.tree or "?")))
+  -- an Elder is also sent gexp (percent) and place (among all druids by guild points)
+  local head = string.format("<b>Level %s</b> &#183; %s", esc(g.level or "?"), esc(g.tree or "?"))
+  if g.gexp ~= nil then head = head .. " &#183; gexp " .. esc(tostring(g.gexp):gsub("%%$", "")) .. "%" end
+  if g.place ~= nil then head = head .. " &#183; #" .. esc(g.place) end
+  N.gHead:echo(head)
   local pets = type(g.pets) == "table" and g.pets or {}
   local max = bars_max()
   if max ~= N.gPetsMax then N.gPetsMax = max ; N.relayout() end   -- room for another pet row
@@ -1128,8 +1155,13 @@ function N.render_druid(g)
   local staff = tonumber(st.wielded) == 1 and "staff (wielded)" or (tonumber(st.held) == 1 and "staff" or nil)
   local gear = {}
   gear[#gear + 1] = staff and tag(staff, true) or tag("no staff", false)
-  gear[#gear + 1] = tag(tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1 and "wand" or "no wand",
-    tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1)
+  local wand = type(g.wand) == "table" and g.wand or {}
+  if tonumber(wand.held) == 1 then
+    local spells = wand_spells(wand)
+    gear[#gear + 1] = tag("wand", true) .. (#spells > 0 and (": " .. table.concat(spells, ", ")) or "")
+  else
+    gear[#gear + 1] = tag("no wand", false)
+  end
   local buffs = {
     tag("arch", tonumber(g.arch) == 1),
     tag("fireflies", tonumber(st.fireflies) == 1),
@@ -1317,7 +1349,20 @@ function N.on_event(_, ev)
   elseif name == "Comm.Channel.Text" then N.channel(v)
   elseif name == "Char.Status" then N.status(v)
   elseif name == "Group.Info" then N.party(v)
+  elseif name == "Guild.Druid.Owl" then N.owl(v)
   elseif N.GUILD_PANES[name:match("^Guild%.(.+)$") or ""] then N.guild(name, v) end
+end
+
+-- Guild.Druid.Owl: what the owl sees while it watches where the druid is not, "with the line
+-- it saw" (shape not yet seen). Into a chat tab of its own, and All.
+function N.owl(v)
+  local line = type(v) == "string" and v or
+    (type(v) == "table" and (v.line or v.text or v.message or v.msg))
+  if type(v) == "table" and not line then
+    for _, x in pairs(v) do if type(x) == "string" then line = x ; break end end
+  end
+  if not line then return end
+  N.channel({ channel = "Owl", talker = "", text = "[Owl] " .. tostring(line) })
 end
 
 function N.hello()

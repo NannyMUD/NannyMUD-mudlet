@@ -272,6 +272,28 @@ clock = 6030
 N.draw_bark()
 check(barkRec[3] == "barkskin  60s" and barkRec[1] == 60 and barkRec[2] == 90, "30 s in: 60 s left, bar two thirds")
 check(N.cd.learned.barkskin == nil, "buffs and cooldowns are kept apart")
+-- the wand's stored spells, and an Elder's gexp and place (shapes guessed from the help)
+gmcp.Guild.Druid = { wand = { held = 1, spells = { "drench", "moonbeam" } }, gexp = "42%", place = 3 }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(rec.txt:find(">wand</span>: drench, moonbeam", 1, true), "wand with its spells")
+check(rec.head:find("&#183; gexp 42% &#183; #3", 1, true), "elder: gexp and place " .. tostring(rec.head))
+gmcp.Guild.Druid = { wand = { held = 1, spells = { drench = 2, starfire = 1 } } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(rec.txt:find(">wand</span>: drench &#215;2, starfire", 1, true), "wand spells as counts")
+-- the owl's report: its own chat tab; the Owl key never lands in the druid's data
+local sent
+local channel = N.channel
+N.channel = function(v) sent = v end
+gmcp.Guild.Druid.Owl = { line = "A troll arrives from the north." }
+N.on_event(nil, "gmcp.Guild.Druid.Owl")
+N.on_event(nil, "gmcp.Guild.Druid")   -- Mudlet raises the parent event too
+check(sent and sent.channel == "Owl" and sent.text == "[Owl] A troll arrives from the north.", "owl line to the Owl tab")
+check(N.gd.Owl == nil, "Owl kept out of the druid's data")
+sent = nil
+N.owl("A bat flutters past.")
+check(sent and sent.text == "[Owl] A bat flutters past.", "owl line sent as a plain string")
+N.channel = channel
+gmcp.Guild.Druid.Owl = nil
 check(petRec[3] == "Squirrel  40%  (away)", "pet away " .. tostring(petRec[3]))
 -- the alchemy pane, from the live payload with the golem and the pelican called out
 local petRec2 = {}

@@ -22,7 +22,9 @@ you want both, and they share one layout.
   NannyBasics times each one as you use it; until it has, the bar counts up instead. Each
   power has an icon, on its bar and in your stack: dark tinted symbols by default, or
   emoji with 'nanny icons emoji' ('nanny icons dark' switches back). For a druid, barkskin
-  gets a bar too, timed the same way, that empties as it wears off. A vampire is sent no HP
+  gets a bar too, timed the same way, that empties as it wears off; the spells stored in
+  your wand are listed with it, an Elder sees guild experience and place in the header,
+  and what your owl reports gets a chat tab of its own. A vampire is sent no HP
   or SP, so its blood takes the whole vitals bar, and the pane shows generation, potency,
   age, veil, celerity and your vampire toggles. The vampire pane is built from the game's
   help and has not met a live vampire yet: if something looks wrong, send the
