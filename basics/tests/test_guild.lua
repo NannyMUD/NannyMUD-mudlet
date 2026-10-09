@@ -307,4 +307,29 @@ gmcp.Guild.Alchemy = { minions = { golem = { follow = 0, hp = 60, state = "out",
 N.on_event(nil, "gmcp.Guild.Alchemy")
 check(petRec[3] == "Golem  60%  fighting a rat  (away)  (staying)", "golem fighting, away, staying: " .. tostring(petRec[3]))
 
+-- the vampire pane, from the fields 'help vampire_gmcp' names (no live payload seen yet)
+N.hp, N.sp = recorder("hp"), recorder("sp")
+N.gHead, N.gTxt = recorder("head"), recorder("txt")
+gmcp.Guild.Vampire = { bp = 140, maxbp = 200, gen = 4, potency = 12, age = 4560, veil = 1, celerity = 0,
+  toggles = { bpinfo = 1, autosuck = 0, shape = 1, wimpy = 40, hide_shape = 0 }, hunger = "thirsty" }
+N.on_event(nil, "gmcp.Guild.Vampire")
+check(N.guildName == "Vampire" and MudletBorders.slots["nanny:guild"].title == "Vampire", "pane retitled Vampire")
+check(rec.hp and rec.hp[3] == "BP 140/200" and N.bloodMode == true, "blood in the vitals bar: " .. tostring(rec.hp and rec.hp[3]))
+check(rec.head == "<b>Gen 4</b> &#183; potency 12 &#183; <span style='color:#9a93b0;'>age 3d 4h</span>",
+  "vampire header " .. tostring(rec.head))
+local on_ = function(s) return "<span style='color:#70c070; font-weight:bold;'>" .. s .. "</span>" end
+local off_ = function(s) return "<span style='color:#555555;'>" .. s .. "</span>" end
+check(rec.txt:find(on_("veil") .. " &#183; " .. off_("celerity"), 1, true), "veil lit, celerity dim")
+check(rec.txt:find(on_("bpinfo") .. " &#183; " .. off_("autosuck") .. " &#183; " .. on_("shape") ..
+  " &#183; " .. on_("wimpy 40 bp") .. " &#183; " .. off_("hide shape"), 1, true), "toggles in order, wimpy in BP")
+check(rec.txt:find(">Other</td><td>hunger thirsty</td>", 1, true), "a field the help does not name is shown")
+gmcp.Guild.Vampire = { veil = false, celerity = "on", toggles = { "bpinfo", "autosuck" }, age = 75 }
+N.on_event(nil, "gmcp.Guild.Vampire")
+check(rec.txt:find(off_("veil") .. " &#183; " .. on_("celerity"), 1, true), "flags as true/false and on/off")
+check(rec.txt:find(on_("bpinfo") .. " &#183; " .. on_("autosuck"), 1, true), "toggles as a list of what is on")
+check(rec.head:find("age 1h 15m", 1, true), "age under a day: hours and minutes")
+gmcp.Char.Vitals = { hp = 50, maxhp = 100, sp = 20, maxsp = 40 }
+N.on_event(nil, "gmcp.Char.Vitals")
+check(N.bloodMode == false and rec.hp[3] == "HP 50/100" and rec.sp[3] == "SP 20/40", "Char.Vitals again: HP and SP back")
+
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

@@ -51,8 +51,9 @@ N.WANT = { "Char 1", "Comm.Channel 1", "External.Discord 1", "Group 1", "Guild 1
 -- guild package is logged; only those in N.GUILD_PANES get the guild pane, which is built for them.
 N.EVENTS = { "Char.Vitals", "Char.Foe", "Comm.Channel.Text",
              "External.Discord.Info", "External.Discord.Status", "Room.Info",
-             "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid" }
-N.GUILD_PANES = { Strigoi = true, Druid = true, Alchemy = true }
+             "Char.Status", "Group.Info", "Guild.Strigoi", "Guild.Alchemy", "Guild.Druid",
+             "Guild.Vampire" }
+N.GUILD_PANES = { Strigoi = true, Druid = true, Alchemy = true, Vampire = true }
 N.seen = N.seen or {}
 
 local function say(s) cecho("\n<cyan>[nanny]: " .. s .. "\n<reset>") end
@@ -232,17 +233,39 @@ function N.pulse()
   hp_colour(c)
 end
 
-function N.vitals(v)
-  if type(v) ~= "table" or not N.hp then return end
-  gauge(N.hp, v.hp, v.maxhp, "HP")
-  gauge(N.sp, v.sp, v.maxsp, "SP")
-  local hp, max = tonumber(v.hp), tonumber(v.maxhp)
-  if hp and max and max > 0 then N.hpFrac = hp / max end
+local function hp_pulse(cur, max)
+  cur, max = tonumber(cur), tonumber(max)
+  if cur and max and max > 0 then N.hpFrac = cur / max end
   if N.hpFrac and N.hpFrac < N.PULSE_AT and not N.pulseTimer then
     N.pulseTimer = tempTimer(0.05, N.pulse, true)
   end
   N.pulse()
+end
+
+-- A vampire is sent no Char.Vitals: its blood takes the HP gauge at full width, SP hidden.
+local function blood_mode(on)
+  if not N.hp or N.bloodMode == on then return end
+  N.bloodMode = on
+  pcall(function()
+    if on then N.sp:hide() ; N.hp:resize("100%", "48%")
+    else N.hp:resize("49%", "48%") ; N.sp:show() end
+  end)
+end
+
+function N.vitals(v)
+  if type(v) ~= "table" or not N.hp then return end
+  blood_mode(false)
+  gauge(N.hp, v.hp, v.maxhp, "HP")
+  gauge(N.sp, v.sp, v.maxsp, "SP")
+  hp_pulse(v.hp, v.maxhp)
   N.body_show(v)
+end
+
+function N.blood(bp, maxbp)
+  if not N.hp or not tonumber(bp) then return end
+  blood_mode(true)
+  gauge(N.hp, bp, maxbp, "BP")
+  hp_pulse(bp, maxbp)
 end
 
 N.SHAPE = {
@@ -660,12 +683,17 @@ local function packed_count() return minions_in("packed") end
 -- Druid and Alchemy draw one gauge per pet or minion out: a Druid's room is kept for as many
 -- pets as allowed; an Alchemist's follows the minions out, since one called out leaves Packed.
 local BAR_GUILDS = { Druid = true, Alchemy = true }
+-- a header and text only: a vampire's blood is in the vitals bar
+local TEXT_GUILDS = { Vampire = true }
 local function bars_max()
   local n = N.guildName == "Alchemy" and minions_in("out") or (N.gd or {}).pets_max
   return math.max(1, tonumber(n) or 1)
 end
 local function guild_card_h()
   local row, txt = guild_dims()
+  if TEXT_GUILDS[N.guildName] then
+    return row + math.floor(N.lh() * 1.35) * 4 + 8   -- powers, toggles, and room for more
+  end
   if BAR_GUILDS[N.guildName] then
     -- Alchemy: materials 3, concoctions 1, packed minions two to a line, and a spare
     local lines = N.guildName == "Alchemy" and (5 + math.max(1, math.ceil(packed_count() / 2))) or 5
@@ -934,7 +962,13 @@ local function fit_guild(w, h)
   local row = guild_dims()
   local strigoi = { N.gGp, N.gPen, N.gWasp }
   local rows = { { N.gHead, row - 2, row } }
-  if BAR_GUILDS[N.guildName] then
+  if TEXT_GUILDS[N.guildName] then
+    local all = { N.gBark }
+    for _, list in ipairs({ strigoi, N.gCdRows, N.gPetRows }) do
+      for _, gg in ipairs(list) do all[#all + 1] = gg end
+    end
+    for _, gg in pairs(all) do pcall(function() gg:hide() end) end
+  elseif BAR_GUILDS[N.guildName] then
     for _, gg in ipairs(strigoi) do pcall(function() gg:hide() end) end
     for _, r in ipairs(N.gCdRows) do pcall(function() r:hide() end) end
     for i, r in ipairs(N.gPetRows) do
@@ -999,7 +1033,9 @@ function N.guild(name, v)
   for k, val in pairs(v) do N.gd[k] = val end
   if gname == "Strigoi" then N.track_cooldowns(v.active) end
   local g = N.gd
+  if gname == "Vampire" then N.blood(g.bp, g.maxbp) end
   if not N.gTxt then return end
+  if N.guildName == "Vampire" then return N.render_vampire(g) end
   if N.guildName == "Druid" then return N.render_druid(g) end
   if N.guildName == "Alchemy" then return N.render_alchemy(g) end
   local dmg = type(g.damage) == "table" and table.concat(g.damage, " / ") or tostring(g.damage or "")
@@ -1119,6 +1155,81 @@ function N.render_druid(g)
     H, table.concat(gear, " &#183; "),
     H, #pets, max,
     fx and H or "", fx or ""))
+end
+
+-- Guild.Vampire, from 'help vampire_gmcp' (no live payload seen yet): bp, maxbp (into the
+-- vitals bar), gen, potency, age (online, in minutes), veil, celerity, toggles (bpinfo,
+-- autosuck, shape, wimpy in BP with 0 off, and for the eldest hide shape). A flag may come as
+-- 1/0, true/false or "on"/"off"; toggles as a mapping or as a list of what is on. Anything
+-- else is shown as it comes, so a field the help does not name is still seen.
+local function flag(x)
+  if type(x) == "boolean" then return x end
+  if type(x) == "number" then return x ~= 0 end
+  local s = tostring(x or ""):lower()
+  return s == "1" or s == "on" or s == "yes" or s == "true"
+end
+local function age_text(m)
+  m = tonumber(m)
+  if not m then return nil end
+  local d, h = math.floor(m / 1440), math.floor(m % 1440 / 60)
+  if d > 0 then return d .. "d " .. h .. "h" end
+  return h > 0 and (h .. "h " .. math.floor(m % 60) .. "m") or (math.floor(m) .. "m")
+end
+local VAMP_KNOWN = { bp = true, maxbp = true, gen = true, potency = true, age = true,
+  veil = true, celerity = true, toggles = true }
+local TOGGLE_ORDER = { "bpinfo", "autosuck", "shape", "wimpy", "hideshape" }
+
+local function vampire_toggles(t)
+  if type(t) ~= "table" then return nil end
+  local out, byKey = {}, {}
+  if #t > 0 then                                     -- a list of what is on
+    for _, x in ipairs(t) do out[#out + 1] = tag(esc(x), true) end
+    return table.concat(out, " &#183; ")
+  end
+  for k, val in pairs(t) do byKey[tostring(k):lower():gsub("[^%w]", "")] = { k, val } end
+  local function one(key)
+    local e = byKey[key]
+    if not e then return end
+    byKey[key] = nil
+    local name, val = tostring(e[1]):gsub("_", " "), e[2]
+    if key == "wimpy" then
+      local n = tonumber(val) or 0
+      out[#out + 1] = tag(n > 0 and ("wimpy " .. n .. " bp") or "wimpy off", n > 0)
+    else
+      out[#out + 1] = tag(esc(name), flag(val))
+    end
+  end
+  for _, key in ipairs(TOGGLE_ORDER) do one(key) end
+  local rest = {}
+  for key in pairs(byKey) do rest[#rest + 1] = key end
+  table.sort(rest)
+  for _, key in ipairs(rest) do one(key) end
+  return #out > 0 and table.concat(out, " &#183; ") or nil
+end
+
+function N.render_vampire(g)
+  local head = { "<b>Gen " .. esc(g.gen or "?") .. "</b>" }
+  if g.potency ~= nil then head[#head + 1] = "potency " .. esc(g.potency) end
+  local age = age_text(g.age)
+  if age then head[#head + 1] = "<span style='color:#9a93b0;'>age " .. age .. "</span>" end
+  N.gHead:echo(table.concat(head, " &#183; "))
+  local H = "color:#e0b64a; font-weight:bold;"
+  local rows = {
+    string.format("<tr><td style='%s'>Powers</td><td>%s</td></tr>", H,
+      tag("veil", flag(g.veil)) .. " &#183; " .. tag("celerity", flag(g.celerity))),
+  }
+  local tg = vampire_toggles(g.toggles)
+  if tg then rows[#rows + 1] = string.format("<tr><td style='%s'>Toggles</td><td>%s</td></tr>", H, tg) end
+  local other = {}
+  for k, val in pairs(g) do
+    if not VAMP_KNOWN[k] then other[#other + 1] = esc(k) .. " " .. esc(type(val) == "table" and json(val) or val) end
+  end
+  table.sort(other)
+  if #other > 0 then
+    rows[#rows + 1] = string.format("<tr><td style='%s'>Other</td><td>%s</td></tr>", H, table.concat(other, " &#183; "))
+  end
+  N.gTxt:echo("<table width='100%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
+    table.concat(rows) .. "</table>")
 end
 
 local function cap(s) s = tostring(s or "?") ; return s:sub(1, 1):upper() .. s:sub(2) end

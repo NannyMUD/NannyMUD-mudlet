@@ -15,13 +15,18 @@ you want both, and they share one layout.
   toxicity, fullness, soak and carried weight, and gold, quest points, XP per hour and stats.
 - **Party pane**: one row per member with HP and SP gauges, marked when they lead, follow,
   never follow, or are elsewhere.
-- **Guild pane**, for the Strigoi so far: guild level and points, penalty, wasp, your stack,
+- **Guild pane**, for the Strigoi, druids, alchemists and vampires. For the Strigoi: guild
+  level and points, penalty, wasp, your stack,
   and your stats with the guild's changes and harvest gains shown beside each. A bar per
   cooldown fills as it recharges. The game does not say how long a cooldown lasts, so
   NannyBasics times each one as you use it; until it has, the bar counts up instead. Each
   power has an icon, on its bar and in your stack: dark tinted symbols by default, or
   emoji with 'nanny icons emoji' ('nanny icons dark' switches back). For a druid, barkskin
-  gets a bar too, timed the same way, that empties as it wears off.
+  gets a bar too, timed the same way, that empties as it wears off. A vampire is sent no HP
+  or SP, so its blood takes the whole vitals bar, and the pane shows generation, potency,
+  age, veil, celerity and your vampire toggles. The vampire pane is built from the game's
+  help and has not met a live vampire yet: if something looks wrong, send the
+  `Guild.Vampire` line from `nanny log`.
 - **Chat pane**: one tab per channel, plus an "All" tab. A tab that gets a message while you
   are reading another one lights up.
 - **GMCP log**, hidden by default (`nanny log`), for seeing the raw data.
@@ -48,6 +53,8 @@ toggle gmcp status     the score card
 toggle gmcp group      the party pane
 toggle gmcp discord    Discord status from your client
 toggle strigoi gmcp    the guild pane, for the Strigoi
+toggle druids gmcp     the guild pane, for druids
+toggle vampires gmcp   the guild pane and your blood, for vampires
 ```
 
 ## Layout
