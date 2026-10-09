@@ -748,7 +748,7 @@ N.STRIGOI_ICONS = {
   ["vex_of_the_sharp-eyed"] = "🦅", acidic = "🧪", rejuvenate = "💚", skullburst = "💀",
   neutrino = "💫", soulstrike = "🔱", umbra = "🌑", wildbound = "🐺", wildbound_razorwind = "💨",
   wildbound_stoneform = "🪨", wildbound_ghostveil = "👤", wildbound_ironmaw = "🦈",
-  soulhail = "🧊", embrace = "🦇",
+  soulhail = "🧊", embrace = "🦇", extra_combat_damage = "➕",
 }
 -- variants that share an icon get a small number beside it in the stack
 N.STRIGOI_MARKS = {
@@ -779,6 +779,7 @@ N.STRIGOI_DARK = {
   umbra = { "◐", BRUISE }, wildbound = { "♞", BONE }, wildbound_razorwind = { "≋", BONE },
   wildbound_stoneform = { "◆", BONE }, wildbound_ghostveil = { "◌", BRUISE },
   wildbound_ironmaw = { "▼", BLOOD }, soulhail = { "✻", BRUISE }, embrace = { "⛧", BLOOD },
+  extra_combat_damage = { "✚", BLOOD },
 }
 -- U+FE0E asks for the plain glyph where a font also has a coloured emoji for it (the skull)
 local TEXT_FORM = "\239\184\142"
@@ -811,6 +812,42 @@ local function icon_html(name, on_bar)
   if on_bar then return tint and ("<span style='color:" .. BONE .. ";'>" .. icon .. "</span>") or icon end
   return "<span style='font-size:" .. (tint and "14" or "13") .. "pt;" ..
     (tint and (" color:" .. tint .. ";") or "") .. "'>" .. icon .. "</span>"
+end
+
+-- The stack as chips: a short name on a dark ground in the power's colour group, readable
+-- without learning the icons. Variants get their own short names; any other name is shown
+-- whole. "chips" (the default) or "icons", kept in the profile directory.
+N.STRIGOI_SHORT = {
+  acidic_touch_one = "acid 1", acidic_touch_two = "acid 2",
+  shadow_leeches_of_vitality = "leech vit", shadow_leeches_of_essence = "leech ess",
+  shadow_leeches_of_soul = "leech soul", purge_of_flesh = "purge",
+  phantom_claws = "claws", phantom_rend = "rend", phantom_vitalash = "vitalash",
+  phantom_wraith = "wraith", vex_of_the_mighty = "vex might", vex_of_the_storm = "vex storm",
+  vex_of_the_sage = "vex sage", vex_of_the_steadfast = "vex stead",
+  vex_of_the_unbroken = "vex unbroken", ["vex_of_the_sharp-eyed"] = "vex eye",
+  wildbound_razorwind = "razorwind", wildbound_stoneform = "stoneform",
+  wildbound_ghostveil = "ghostveil", wildbound_ironmaw = "ironmaw",
+  extra_combat_damage = "+dmg",
+}
+local CHIP_MAX = 14   -- a name longer than this, not in the table above, is cut
+local CHIP_GROUND = { [BLOOD] = "#5a1818", [BONE] = "#48433a", [BRUISE] = "#3b2a55", [ROT] = "#34421a" }
+
+local function stack_file() return getMudletHomeDir() .. "/nanny_stack.txt" end
+if not N.stackStyle then
+  local fh = io.open(stack_file(), "r")
+  N.stackStyle = fh and fh:read("*l") or "chips"
+  if fh then fh:close() end
+  if N.stackStyle ~= "icons" then N.stackStyle = "chips" end
+end
+
+local function chip_html(name)
+  local k = tostring(name):lower():gsub("%s+", "_")
+  local d = lookup(N.STRIGOI_DARK, name)
+  local ground = d and CHIP_GROUND[d[2]] or "#333333"
+  local s = N.STRIGOI_SHORT[k] or tostring(name)
+  if #s > CHIP_MAX then s = s:sub(1, CHIP_MAX - 1) .. "…" end
+  return "<span style='background-color:" .. ground .. "; color:#e6dcc8;'>&nbsp;" ..
+    esc(s) .. "&nbsp;</span>"
 end
 
 -- Timers the game sends no times for: each one's length is learned from when it starts and
@@ -1007,9 +1044,14 @@ local function list(t, empty)
   return table.concat(out, " &#183; ")
 end
 
--- the stack's count, then a row of icons in slots of fixed width; a name with no icon yet is
--- shown as text
+-- the stack's count, then its chips, or a row of icons in slots of fixed width (a name with
+-- no icon yet shown as text)
 local function stack_icons(st, size)
+  if N.stackStyle == "chips" then
+    local chips = {}
+    for i, x in ipairs(st) do chips[i] = chip_html(type(x) == "table" and json(x) or tostring(x)) end
+    return #st .. "/" .. esc(size or "?") .. " &#183; " .. (#st > 0 and table.concat(chips, " ") or "empty")
+  end
   local cells = { "<td>" .. #st .. "/" .. esc(size or "?") .. " &#183;&nbsp;</td>" }
   if #st == 0 then cells[2] = "<td>empty</td>" end
   for _, x in ipairs(st) do
@@ -1555,6 +1597,16 @@ function N.cmd(arg)
       say(path == "" and "back to the built-in copy from the next start." or
           ("loading from " .. path .. "; 'nanny reload' now."))
     end
+  elseif verb == "stack" then
+    if rest ~= "chips" and rest ~= "icons" then
+      say("stack: " .. N.stackStyle .. ". 'nanny stack chips' or 'nanny stack icons' to switch.")
+      return
+    end
+    N.stackStyle = rest
+    local fh = io.open(stack_file(), "w")
+    if fh then fh:write(rest) ; fh:close() end
+    if N.guildName == "Strigoi" then N.guild("Guild.Strigoi", {}) end
+    say("stack: " .. rest .. ".")
   elseif verb == "icons" then
     if rest ~= "emoji" and rest ~= "dark" then
       say("icons: " .. N.iconSet .. ". 'nanny icons emoji' or 'nanny icons dark' to switch.")
@@ -1581,7 +1633,7 @@ function N.cmd(arg)
         "\n  'nanny place <comp> <cell>' also moves a pane; 'nanny reset' restores the default." ..
         "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
         "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
-        "\n  'nanny icons dark|emoji' picks the guild pane's icons." ..
+        "\n  'nanny icons dark|emoji' picks the guild pane's icons, 'nanny stack chips|icons' the stack's look." ..
         "\n  'nanny update' installs the newest release. This is NannyBasics " .. N.VERSION .. ".")
   end
 end

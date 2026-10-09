@@ -20,8 +20,9 @@ you want both, and they share one layout.
   and your stats with the guild's changes and harvest gains shown beside each. A bar per
   cooldown fills as it recharges. The game does not say how long a cooldown lasts, so
   NannyBasics times each one as you use it; until it has, the bar counts up instead. Each
-  power has an icon, on its bar and in your stack: dark tinted symbols by default, or
-  emoji with 'nanny icons emoji' ('nanny icons dark' switches back). For a druid, barkskin
+  power has an icon on its bar: dark tinted symbols by default, or emoji with 'nanny icons
+  emoji' ('nanny icons dark' switches back). Your stack shows each power by a short name on
+  a tinted ground; 'nanny stack icons' shows it as icons instead ('nanny stack chips' back). For a druid, barkskin
   gets a bar too, timed the same way, that empties as it wears off; the spells stored in
   your wand are listed with it, an Elder sees guild experience and place in the header,
   and what your owl reports gets a chat tab of its own. A vampire is sent no HP

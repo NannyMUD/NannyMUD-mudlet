@@ -18,7 +18,9 @@ dofile(HERE .. "border.lua")
 dofile(HERE .. "nannybasics.lua")
 local N = NannyBasics
 local default_dark = N.iconSet == "dark"
+local default_chips = N.stackStyle == "chips"
 N.iconSet = "emoji"   -- the emoji checks below; the dark set is tested on its own
+N.stackStyle = "icons"   -- likewise the icon stack; chips are tested on their own
 
 -- record what the pane widgets are given
 local rec = {}
@@ -45,6 +47,7 @@ local function check(ok, msg) print((ok and "ok   " or "FAIL ") .. msg) ; if not
 
 check(MudletBorders.where("nanny:guild") == nil, "no guild data yet: guild pane parked")
 check(default_dark, "the dark icons are the default")
+check(default_chips, "the stack as chips is the default")
 
 N.on_event(nil, "gmcp.Guild.Strigoi")   -- gmcp table empty: v is nil, must not error
 gmcp.Guild = { Strigoi = {
@@ -91,6 +94,21 @@ check(rec.txt:find(slot("<span style='font-size:14pt; color:#d8cfb8;'>☠\239\18
   slot("<span style='font-size:14pt; color:#8aa83a;'>⁂\239\184\142</span>" .. sub(1)), 1, true),
   "dark set: skull in bone, acid in rot, the number kept")
 N.iconSet = "emoji"
+-- the stack as chips: short names on a ground in the power's colour group
+N.stackStyle = "chips"
+gmcp.Guild.Strigoi = { stack = { "bane", "acidic touch one", "shadow leeches of essence", "claw" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+local function chip(ground, s)
+  return "<span style='background-color:" .. ground .. "; color:#e6dcc8;'>&nbsp;" .. s .. "&nbsp;</span>"
+end
+check(rec.txt:find(">Stack</td><td>4/6 &#183; " .. chip("#34421a", "bane") .. " " .. chip("#34421a", "acid 1") ..
+  " " .. chip("#3b2a55", "leech ess") .. " " .. chip("#333333", "claw") .. "</td>", 1, true),
+  "chips: bane and acid in rot, the leech in bruise, an unknown name plain")
+gmcp.Guild.Strigoi = { stack = { "extra combat damage", "a very long name nobody knows" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(rec.txt:find("2/6 &#183; " .. chip("#5a1818", "+dmg") .. " " .. chip("#333333", "a very long n…"), 1, true),
+  "extra combat damage as +dmg in blood; an unknown long name cut at 14")
+N.stackStyle = "icons"
 gmcp.Guild.Strigoi = { stack = { "claw", "drain" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.txt:find(">Int</td><td align='right'>? <span style='color:#6fb8e0;'>(+3)</span>", 1, true),
