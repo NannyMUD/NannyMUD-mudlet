@@ -32,6 +32,14 @@ local function recorder(name)
 end
 N.gHead, N.gGp, N.gPen, N.gWasp, N.gTxt = recorder("head"), recorder("gp"), recorder("pen"), recorder("wasp"), recorder("txt")
 
+-- the markup of an icon in its fixed slot: on a bar, and in the stack
+local function bar(icon, text)
+  return "<table cellspacing='0' cellpadding='0'><tr><td width='24' align='center'>" .. icon ..
+    "</td><td>&nbsp;" .. text .. "</td></tr></table>"
+end
+local function slot(inner) return "<td width='30' align='center'>" .. inner .. "</td>" end
+local function sub(n) return "<sub style='color:#e0b64a; font-weight:bold;'>" .. n .. "</sub>" end
+
 local fails = 0
 local function check(ok, msg) print((ok and "ok   " or "FAIL ") .. msg) ; if not ok then fails = fails + 1 end end
 
@@ -57,7 +65,7 @@ check(rec.gp and rec.gp[2] == 121862337 + 19588066, "GP bar max = points + next 
 check(rec.pen and rec.pen[3] == "Penalty  0%", "penalty label " .. tostring(rec.pen and rec.pen[3]))
 check(rec.wasp and rec.wasp[3] == "Wasp L8  120/120", "wasp label " .. tostring(rec.wasp and rec.wasp[3]))
 print("  txt: " .. tostring(rec.txt))
-check(rec.txt and rec.txt:find("0/6 &#183; empty", 1, true), "stack 0/6 empty")
+check(rec.txt and rec.txt:find("<td>0/6 &#183;&nbsp;</td><td>empty</td>", 1, true), "stack 0/6 empty")
 check(rec.txt and rec.txt:find(">Str</td><td align='right'>?</td>", 1, true), "no stat changes, no base: plain ?")
 check(not rec.txt:find("#6fb8e0", 1, true), "empty temp: no harvest parenthesis")
 
@@ -67,19 +75,20 @@ gmcp.Guild.Strigoi = { penalty = 40, stack = { "claw", "drain" }, str = 2, con =
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.pen[3] == "Penalty  40%" and N.gPenCol == "#b03030", "penalty 40% turns red")
 check(rec.wasp[3] == "Wasp: not out", "wasp not out")
-check(rec.txt:find("2/6 &#183; claw <span style='font-size:13pt;'>🩸</span>", 1, true),
-  "stack: claw as text (no icon), drain as its icon")
+check(rec.txt:find("<td>2/6 &#183;&nbsp;</td><td>&nbsp;claw&nbsp;</td>" ..
+  slot("<span style='font-size:13pt;'>🩸</span>"), 1, true),
+  "stack: claw as text (no icon), drain as its icon in a slot")
 gmcp.Guild.Strigoi = { stack = { "acidic touch two", "shadow leeches of essence" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(rec.txt:find("🧪</span><sub style='color:#e0b64a; font-weight:bold;'>2</sub> " ..
-  "<span style='font-size:13pt;'>🪱</span><sub style='color:#e0b64a; font-weight:bold;'>2</sub>", 1, true),
+check(rec.txt:find(slot("<span style='font-size:13pt;'>🧪</span>" .. sub(2)) ..
+  slot("<span style='font-size:13pt;'>🪱</span>" .. sub(2)), 1, true),
   "variants sharing an icon carry their number")
 -- the dark set: tinted glyphs, asking for the plain form of the skull
 N.iconSet = "dark"
 gmcp.Guild.Strigoi = { stack = { "skullburst", "acidic touch one" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(rec.txt:find("<span style='font-size:14pt; color:#d8cfb8;'>☠\239\184\142</span> " ..
-  "<span style='font-size:14pt; color:#8aa83a;'>☣\239\184\142</span><sub", 1, true),
+check(rec.txt:find(slot("<span style='font-size:14pt; color:#d8cfb8;'>☠\239\184\142</span>") ..
+  slot("<span style='font-size:14pt; color:#8aa83a;'>⁂\239\184\142</span>" .. sub(1)), 1, true),
   "dark set: skull in bone, acid in rot, the number kept")
 N.iconSet = "emoji"
 gmcp.Guild.Strigoi = { stack = { "claw", "drain" } }
@@ -124,37 +133,38 @@ for i = 1, 3 do
 end
 gmcp.Guild.Strigoi = { active = { "wasp", "shift", "shift_cast_timestamp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.gCdShown == 1 and cdRec[1][3] == "🔄  shift  0s, learning", "one bar, shift, learning: " .. tostring(cdRec[1][3]))
+check(N.gCdShown == 1 and cdRec[1][3] == bar("🔄", "shift  0s, learning"), "one bar, shift, learning: " .. tostring(cdRec[1][3]))
 clock = 1030
 gmcp.Guild.Strigoi = { active = { "wasp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.cdLearned.shift and N.cdLearned.shift[1] == 30, "shift learned as 30 s")
-check(cdRec[1][3] == "🔄  shift  ready" and cdRec[1][1] == 1 and cdRec[1][2] == 1, "shift ready, bar full")
+check(N.cd.learned.shift and N.cd.learned.shift[1] == 30, "shift learned as 30 s")
+check(cdRec[1][3] == bar("🔄", "shift  ready") and cdRec[1][1] == 1 and cdRec[1][2] == 1, "shift ready, bar full")
 clock = 2000
 gmcp.Guild.Strigoi = { active = { "shift", "shift_cast_timestamp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 clock = 2010
 N.draw_cooldowns()
-check(cdRec[1][3] == "🔄  shift  20s" and cdRec[1][1] == 10 and cdRec[1][2] == 30, "ten seconds in: 20s left, bar a third full")
+check(cdRec[1][3] == bar("🔄", "shift  20s") and cdRec[1][1] == 10 and cdRec[1][2] == 30, "ten seconds in: 20s left, bar a third full")
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 -- running before the session's first message: its start is unknown, so nothing is learned
-N.cdPrimed = false
+N.cd.primed = false
 clock = 3000
 gmcp.Guild.Strigoi = { active = { "neutrino" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 clock = 3005
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.cdLearned.neutrino == nil and N.gCdShown == 1, "a cooldown already running at the start teaches nothing")
-check(#N.cdLearned.shift == 2 and N.cdLearned.shift[2] == 10, "second timing of shift kept: 10 s")
+check(N.cd.learned.neutrino == nil and N.gCdShown == 1, "a cooldown already running at the start teaches nothing")
+check(#N.cd.learned.shift == 2 and N.cd.learned.shift[2] == 10, "second timing of shift kept: 10 s")
 gmcp.Guild.Strigoi = { active = { "purge_of_flesh", "shadow_curse" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(cdRec[1][3]:find("^🍖  purge of flesh") and cdRec[2][3]:find("^🪱  shadow curse"),
+check(cdRec[1][3] == bar("🍖", "purge of flesh  0s, learning")
+  and cdRec[2][3] == bar("🪱", "shadow curse  0s, learning"),
   "an icon found by the first word: purge, shadow")
 N.iconSet = "dark"
 N.draw_cooldowns()
-check(cdRec[1][3]:find("^<span style='color:#d8cfb8;'>⚗\239\184\142</span>  purge of flesh"),
+check(cdRec[1][3] == bar("<span style='color:#d8cfb8;'>∅\239\184\142</span>", "purge of flesh  0s, learning"),
   "dark set on a bar: the glyph in bone " .. tostring(cdRec[1][3]))
 N.iconSet = "emoji"
 gmcp.Guild.Strigoi = { active = {} }
@@ -209,6 +219,12 @@ N.gPetRows[1] = setmetatable({}, { __index = function(t, k)
   if k == "setValue" then return function(_, v, m, s) petRec = { v, m, s } end end
   return function() return t end
 end })
+local barkRec = {}
+N.gBark = setmetatable({}, { __index = function(t, k)
+  if k == "setValue" then return function(_, v, m, s) barkRec = { v, m, s } end end
+  if k == "front" or k == "back" or k == "text" then return any end
+  return function() return t end
+end })
 gmcp.Guild.Druid = { harmony = 0, arch = 0, tree = "Willow", staff = { fireflies = 1, wielded = 0, held = 1 },
   pets = { { here = 1, hp = 100, name = "Squirrel" } }, pets_max = 1, effects = {},
   barkskin = { on = 1, shimmering = 0 }, points = 30060, level = 5, wand = { held = 0 } }
@@ -217,17 +233,45 @@ check(N.guildName == "Druid" and MudletBorders.slots["nanny:guild"].title == "Dr
 check(rec.head:find("<b>Level 5</b> &#183; Willow", 1, true), "druid header: level and tree")
 check(rec.txt:find("color:#555555;'>arch", 1, true), "arch dim while you are not the arch druid")
 check(rec.txt:find(">Points</td><td>30,060</td>", 1, true), "points, no bar")
-check(rec.txt:find("color:#70c070; font-weight:bold;'>barkskin", 1, true)
-  and rec.txt:find("color:#70c070; font-weight:bold;'>fireflies", 1, true)
-  and rec.txt:find("color:#555555;'>harmony", 1, true), "barkskin and fireflies lit, harmony dim")
+check(rec.txt:find("color:#70c070; font-weight:bold;'>fireflies", 1, true)
+  and rec.txt:find("color:#555555;'>harmony", 1, true), "fireflies lit, harmony dim")
+check(not rec.txt:find(">barkskin", 1, true), "barkskin is a bar now, not a tag")
+check(barkRec[3] == "barkskin  on" and N.gBark.cdCol == "#4f7f3f",
+  "barkskin already on at the first message: on, no time " .. tostring(barkRec[3]))
 check(rec.txt:find(">staff</span>", 1, true) and rec.txt:find(">no wand</span>", 1, true), "gear: staff, no wand")
 check(rec.txt:find(">Pets</td><td>1/1</td>", 1, true), "pets 1/1")
 check(petRec[3] == "Squirrel  100%", "pet gauge " .. tostring(petRec[3]))
 check(not rec.txt:find("Effects", 1, true), "no effects row while there are none")
-gmcp.Guild.Druid = { arch = 1, barkskin = { on = 1, shimmering = 1 }, pets = { { here = 0, hp = 40, name = "Squirrel" } } }
+gmcp.Guild.Druid = { arch = 1, barkskin = { on = 1, shimmering = 1 }, pets = { { here = 0, hp = 40, name = "Squirrel" } },
+  effects = { "arch_druid" } }
 N.on_event(nil, "gmcp.Guild.Druid")
 check(rec.txt:find("color:#70c070; font-weight:bold;'>arch", 1, true), "arch lit among the buffs")
-check(rec.txt:find("color:#e0a030; font-weight:bold;'>barkskin", 1, true), "shimmering barkskin turns amber")
+check(not rec.txt:find("Effects", 1, true), "arch_druid not repeated under Effects")
+gmcp.Guild.Druid = { effects = { "arch_druid", "entangle" } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(rec.txt:find(">Effects</td><td>entangle</td>", 1, true), "other effects still listed")
+check(N.gBark.cdCol == "#b07a20", "shimmering barkskin turns the bar amber")
+-- barkskin's length is learned from on to off, then the bar empties as it wears off
+clock = 5000
+gmcp.Guild.Druid = { barkskin = { on = 0, shimmering = 0 } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(barkRec[3] == "barkskin  off" and N.buffs.learned.barkskin == nil, "off; a start not seen taught nothing")
+gmcp.Guild.Druid = { barkskin = { on = 1, shimmering = 0 } }
+N.on_event(nil, "gmcp.Guild.Druid")
+clock = 5010
+N.draw_bark()
+check(barkRec[3] == "barkskin  10s, learning", "a start seen: counts up " .. tostring(barkRec[3]))
+clock = 5090
+gmcp.Guild.Druid = { barkskin = { on = 0, shimmering = 0 } }
+N.on_event(nil, "gmcp.Guild.Druid")
+check(N.buffs.learned.barkskin and N.buffs.learned.barkskin[1] == 90, "barkskin learned as 90 s")
+clock = 6000
+gmcp.Guild.Druid = { barkskin = { on = 1, shimmering = 0 } }
+N.on_event(nil, "gmcp.Guild.Druid")
+clock = 6030
+N.draw_bark()
+check(barkRec[3] == "barkskin  60s" and barkRec[1] == 60 and barkRec[2] == 90, "30 s in: 60 s left, bar two thirds")
+check(N.cd.learned.barkskin == nil, "buffs and cooldowns are kept apart")
 check(petRec[3] == "Squirrel  40%  (away)", "pet away " .. tostring(petRec[3]))
 -- the alchemy pane, from the live payload with the golem and the pelican called out
 local petRec2 = {}

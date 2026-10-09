@@ -669,7 +669,8 @@ local function guild_card_h()
   if BAR_GUILDS[N.guildName] then
     -- Alchemy: materials 3, concoctions 1, packed minions two to a line, and a spare
     local lines = N.guildName == "Alchemy" and (5 + math.max(1, math.ceil(packed_count() / 2))) or 5
-    return row * (1 + bars_max()) + math.floor(N.lh() * 1.35) * lines + 8
+    local extra = N.guildName == "Druid" and 1 or 0   -- the barkskin bar
+    return row * (1 + bars_max() + extra) + math.floor(N.lh() * 1.35) * lines + 8
   end
   return row * (4 + (N.gCdShown or 0)) + txt
 end
@@ -731,24 +732,25 @@ local function power_mark(name)
 end
 
 -- The dark set: plain symbol glyphs, tinted. Blood for feeding and wounds, bone for death,
--- bruise for the spectral, rot for curses and acid.
+-- bruise for the spectral, rot for curses and acid. None has an emoji form except the skull:
+-- where the font lacks a glyph, Qt falls back to the emoji font and the tint is lost.
 local BLOOD, BONE, BRUISE, ROT = "#b02a2a", "#d8cfb8", "#9a7ad0", "#8aa83a"
 N.STRIGOI_DARK = {
   drain = { "†", BLOOD }, foresee = { "☽", BRUISE }, mark = { "⌖", BLOOD },
   soultick = { "⧗", BONE }, evaluate = { "◉", BONE }, morph = { "☿", BRUISE },
-  bane = { "⛓", ROT }, hemal = { "☩", BLOOD }, phantom = { "♆", BRUISE },
-  phantom_claws = { "⚔", BONE }, phantom_rend = { "✖", BLOOD }, phantom_vitalash = { "❥", BLOOD },
-  phantom_wraith = { "♆", BRUISE }, revivus = { "☥", BONE }, graveveil = { "⚰", BONE },
-  shift = { "⇅", BLOOD }, harvest = { "♄", BONE }, purge = { "⚗", ROT }, shadow = { "☾", BRUISE },
-  timewrap = { "♾", BRUISE }, wasp = { "✴", ROT }, wither = { "❧", ROT },
+  bane = { "⚯", ROT }, hemal = { "☩", BLOOD }, phantom = { "♆", BRUISE },
+  phantom_claws = { "⋔", BONE }, phantom_rend = { "✕", BLOOD }, phantom_vitalash = { "❥", BLOOD },
+  phantom_wraith = { "♆", BRUISE }, revivus = { "☥", BONE }, graveveil = { "♰", BONE },
+  shift = { "⇅", BLOOD }, harvest = { "♄", BONE }, purge = { "∅", ROT }, shadow = { "☾", BRUISE },
+  timewrap = { "∞", BRUISE }, wasp = { "✷", ROT }, wither = { "❧", ROT },
   prescience = { "⊙", BRUISE }, vex = { "✠", BLOOD }, vex_of_the_mighty = { "♜", BLOOD },
   vex_of_the_storm = { "☈", BRUISE }, vex_of_the_sage = { "☉", BRUISE },
   vex_of_the_steadfast = { "♖", BONE }, vex_of_the_unbroken = { "▣", BONE },
-  ["vex_of_the_sharp-eyed"] = { "◎", BLOOD }, acidic = { "☣", ROT }, rejuvenate = { "☤", BONE },
-  skullburst = { "☠", BONE }, neutrino = { "⚛", BRUISE }, soulstrike = { "☄", BRUISE },
+  ["vex_of_the_sharp-eyed"] = { "◎", BLOOD }, acidic = { "⁂", ROT }, rejuvenate = { "☤", BONE },
+  skullburst = { "☠", BONE }, neutrino = { "✺", BRUISE }, soulstrike = { "☇", BRUISE },
   umbra = { "◐", BRUISE }, wildbound = { "♞", BONE }, wildbound_razorwind = { "≋", BONE },
   wildbound_stoneform = { "◆", BONE }, wildbound_ghostveil = { "◌", BRUISE },
-  wildbound_ironmaw = { "▼", BLOOD }, soulhail = { "❄", BRUISE }, embrace = { "⛧", BLOOD },
+  wildbound_ironmaw = { "▼", BLOOD }, soulhail = { "✻", BRUISE }, embrace = { "⛧", BLOOD },
 }
 -- U+FE0E asks for the plain glyph where a font also has a coloured emoji for it (the skull)
 local TEXT_FORM = "\239\184\142"
@@ -783,61 +785,108 @@ local function icon_html(name, on_bar)
     (tint and (" color:" .. tint .. ";") or "") .. "'>" .. icon .. "</span>"
 end
 
+-- Timers the game sends no times for: each one's length is learned from when it starts and
+-- stops, the median of the last few, kept in a file of its own in the profile directory.
+-- on[name] = { t = when it started, clean = whether the start was seen }.
+local TIMER_KEEP = 5
+local function timer_set(file)
+  local T = { learned = {}, on = {}, primed = false }
+  local path = getMudletHomeDir() .. "/" .. file
+  if type(table.load) == "function" then pcall(table.load, path, T.learned) end
+
+  function T.length(name)
+    local s = T.learned[name]
+    if type(s) ~= "table" or #s == 0 then return nil end
+    local c = {}
+    for i, d in ipairs(s) do c[i] = d end
+    table.sort(c)
+    return c[math.ceil(#c / 2)]
+  end
+
+  -- every name known, learned or running now, in a fixed order
+  function T.names()
+    local seen, out = {}, {}
+    for k in pairs(T.learned) do seen[k] = true end
+    for k in pairs(T.on) do seen[k] = true end
+    for k in pairs(seen) do out[#out + 1] = k end
+    table.sort(out)
+    return out
+  end
+
+  -- cur: the set of names running now. The first call of a session finds some already
+  -- running, started who knows when, so those teach nothing.
+  function T.update(cur)
+    local now = getEpoch()
+    for k in pairs(cur) do
+      if not T.on[k] then T.on[k] = { t = now, clean = T.primed } end
+    end
+    for k, on in pairs(T.on) do
+      if not cur[k] then
+        if on.clean then
+          local s = T.learned[k] or {}
+          s[#s + 1] = math.floor(now - on.t + 0.5)
+          while #s > TIMER_KEEP do table.remove(s, 1) end
+          T.learned[k] = s
+          if type(table.save) == "function" then pcall(table.save, path, T.learned) end
+        end
+        T.on[k] = nil
+      end
+    end
+    T.primed = true
+  end
+  return T
+end
+
 -- Strigoi cooldowns: every name in "active" but the wasp (it has its own gauge) and the
--- *_cast_timestamp twins. The game sends no times, so each cooldown's length is learned from
--- when its name comes and goes: the median of the last few, kept in the profile directory.
-local CD_SKIP, CD_KEEP = { wasp = true }, 5
-local function cd_file() return getMudletHomeDir() .. "/nanny_cooldowns.lua" end
-if not N.cdLearned then
-  N.cdLearned = {}
-  if type(table.load) == "function" then pcall(table.load, cd_file(), N.cdLearned) end
-end
-N.cdOn = N.cdOn or {}          -- name -> { t = when it appeared, clean = its start was seen }
+-- *_cast_timestamp twins. Druid buffs: barkskin, from its "on".
+N.cd = N.cd or timer_set("nanny_cooldowns.lua")
+N.buffs = N.buffs or timer_set("nanny_buffs.lua")
 N.gCdRows = N.gCdRows or {}
-
-local function cd_length(name)
-  local s = N.cdLearned[name]
-  if type(s) ~= "table" or #s == 0 then return nil end
-  local c = {}
-  for i, d in ipairs(s) do c[i] = d end
-  table.sort(c)
-  return c[math.ceil(#c / 2)]
-end
-
--- every cooldown known, learned or running now, in a fixed order
-local function cd_names()
-  local seen, out = {}, {}
-  for k in pairs(N.cdLearned) do seen[k] = true end
-  for k in pairs(N.cdOn) do seen[k] = true end
-  for k in pairs(seen) do out[#out + 1] = k end
-  table.sort(out)
-  return out
-end
+local CD_SKIP = { wasp = true }
 
 function N.track_cooldowns(active)
   if type(active) ~= "table" then return end
-  local now, cur = getEpoch(), {}
+  local cur = {}
   for _, x in ipairs(active) do
     local k = tostring(x)
     if not CD_SKIP[k] and not k:match("_cast_timestamp$") then cur[k] = true end
   end
-  -- the first message of a session finds cooldowns already running, started who knows when
-  for k in pairs(cur) do
-    if not N.cdOn[k] then N.cdOn[k] = { t = now, clean = N.cdPrimed == true } end
+  N.cd.update(cur)
+end
+
+-- A bar that empties as a buff wears off: time left once its length is learned, counting up
+-- until then; amber while it shimmers, dim when off.
+local function buff_bar(g, name, on, shimmering)
+  local run, len, now = N.buffs.on[name], N.buffs.length(name), getEpoch()
+  local col
+  if not on then
+    col = "#2a2a2a"
+    g:setValue(0, 1, name .. "  off")
+  elseif run and len then
+    local left = math.max(0, math.ceil(run.t + len - now))
+    col = shimmering and "#b07a20" or "#4f7f3f"
+    g:setValue(left, math.max(len, 1), name .. "  " .. left .. "s")
+  else
+    col = shimmering and "#b07a20" or "#4f7f3f"
+    -- counting up only from a start that was seen
+    g:setValue(1, 1, name .. ((run and run.clean) and ("  " .. math.floor(now - run.t) .. "s, learning") or "  on"))
   end
-  for k, on in pairs(N.cdOn) do
-    if not cur[k] then
-      if on.clean then
-        local s = N.cdLearned[k] or {}
-        s[#s + 1] = math.floor(now - on.t + 0.5)
-        while #s > CD_KEEP do table.remove(s, 1) end
-        N.cdLearned[k] = s
-        if type(table.save) == "function" then pcall(table.save, cd_file(), N.cdLearned) end
-      end
-      N.cdOn[k] = nil
-    end
+  if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, "#161a14") end
+end
+
+local function bark_row()
+  if not N.gBark then
+    N.gBark = Geyser.Gauge:new({ name = "NannyGuildBark", x = 0, y = 0, width = "100%", height = 10 },
+      N.comps.guild.box)
   end
-  N.cdPrimed = true
+  return N.gBark
+end
+
+-- barkskin from the druid's last message; the second timer redraws it between messages
+function N.draw_bark()
+  if not (N.comps.guild and N.comps.guild.box) then return end
+  local bk = type(N.gd.barkskin) == "table" and N.gd.barkskin or {}
+  buff_bar(bark_row(), "barkskin", tonumber(bk.on) == 1, tonumber(bk.shimmering) == 1)
 end
 
 local function cd_row(i)
@@ -848,23 +897,31 @@ local function cd_row(i)
   return g
 end
 
--- A bar per cooldown, filling as it recharges: full and green when ready. Until a length is
--- learned, a running one counts up instead.
+-- an icon in a slot of fixed width, so text after it lines up whatever the glyph's width
+local SLOT_W = 24
+local function slotted(icon, text)
+  if not icon then return text end
+  return "<table cellspacing='0' cellpadding='0'><tr><td width='" .. SLOT_W ..
+    "' align='center'>" .. icon .. "</td><td>&nbsp;" .. text .. "</td></tr></table>"
+end
+
+-- A bar per cooldown, filling as it recharges: full when ready. Until a length is learned, a
+-- running one counts up instead.
 function N.draw_cooldowns()
   if not (N.comps.guild and N.comps.guild.box) then return end
-  local names, now = cd_names(), getEpoch()
+  local names, now = N.cd.names(), getEpoch()
   for i, k in ipairs(names) do
-    local g, on, len = cd_row(i), N.cdOn[k], cd_length(k)
+    local g, on, len = cd_row(i), N.cd.on[k], N.cd.length(k)
     local icon, dark = icon_html(k, true), N.iconSet == "dark"
-    local label, col = (icon and icon .. "  " or "") .. k:gsub("_", " "), dark and "#3b2a55" or "#4a5a9a"
+    local label, col = k:gsub("_", " "), dark and "#3b2a55" or "#4a5a9a"
     if not on then
       col = dark and "#6e1c1c" or "#3a8f3a"
-      g:setValue(1, 1, label .. "  ready")
+      g:setValue(1, 1, slotted(icon, label .. "  ready"))
     elseif len then
       local left = math.max(0, math.ceil(on.t + len - now))
-      g:setValue(math.max(0, len - left), math.max(len, 1), label .. "  " .. left .. "s")
+      g:setValue(math.max(0, len - left), math.max(len, 1), slotted(icon, label .. "  " .. left .. "s"))
     else
-      g:setValue(0, 1, label .. "  " .. math.floor(now - on.t) .. "s, learning")
+      g:setValue(0, 1, slotted(icon, label .. "  " .. math.floor(now - on.t) .. "s, learning"))
     end
     if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, dark and "#140e1a" or "#16182a") end
   end
@@ -884,8 +941,13 @@ local function fit_guild(w, h)
       if i <= (N.gPetsShown or 0) then rows[#rows + 1] = { r, row - 2, row }
       else pcall(function() r:hide() end) end
     end
+    if N.gBark then
+      if N.guildName == "Druid" then rows[#rows + 1] = { N.gBark, row - 2, row }
+      else pcall(function() N.gBark:hide() end) end
+    end
   else
     for _, r in ipairs(N.gPetRows) do pcall(function() r:hide() end) end
+    if N.gBark then pcall(function() N.gBark:hide() end) end
     for _, gg in ipairs(strigoi) do rows[#rows + 1] = { gg, row - 2, row } end
     for i, r in ipairs(N.gCdRows) do
       if i <= (N.gCdShown or 0) then rows[#rows + 1] = { r, row - 2, row }
@@ -911,18 +973,19 @@ local function list(t, empty)
   return table.concat(out, " &#183; ")
 end
 
--- the stack as a row of icons; a name with no icon yet is shown as text
-local function stack_icons(st)
-  if #st == 0 then return "empty" end
-  local out = {}
-  for i, x in ipairs(st) do
+-- the stack's count, then a row of icons in slots of fixed width; a name with no icon yet is
+-- shown as text
+local function stack_icons(st, size)
+  local cells = { "<td>" .. #st .. "/" .. esc(size or "?") .. " &#183;&nbsp;</td>" }
+  if #st == 0 then cells[2] = "<td>empty</td>" end
+  for _, x in ipairs(st) do
     local name = type(x) == "table" and json(x) or tostring(x)
     local icon, mark = icon_html(name), power_mark(name)
-    out[i] = icon and (icon ..
-      (mark and ("<sub style='color:#e0b64a; font-weight:bold;'>" .. mark .. "</sub>") or ""))
-      or esc(name)
+    cells[#cells + 1] = icon and ("<td width='" .. (SLOT_W + 6) .. "' align='center'>" .. icon ..
+      (mark and ("<sub style='color:#e0b64a; font-weight:bold;'>" .. mark .. "</sub>") or "") .. "</td>")
+      or ("<td>&nbsp;" .. esc(name) .. "&nbsp;</td>")
   end
-  return table.concat(out, " ")
+  return "<table cellspacing='0' cellpadding='0'><tr>" .. table.concat(cells) .. "</tr></table>"
 end
 
 N.gd = N.gd or {}
@@ -989,11 +1052,11 @@ function N.guild(name, v)
     "</table>" ..
     -- last, so its varying wrap moves nothing above it
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
-    "<tr><td style='%s'>Stack</td><td>%d/%s &#183; %s</td></tr>" ..
+    "<tr><td style='%s'>Stack</td><td>%s</td></tr>" ..
     "</table>",
     H, tick,
     H, stat("str"), H, stat("int"), H, stat("dex"), H, stat("con"),
-    H, #st, esc(g.stack_size or "?"), stack_icons(st)))
+    H, stack_icons(st, g.stack_size)))
 end
 
 -- A buff as a tag: lit while on, amber while it is about to wear off, dim when off.
@@ -1001,6 +1064,8 @@ local function tag(name, on, fading)
   local c = (fading and "#e0a030") or (on and "#70c070") or "#555555"
   return string.format("<span style='color:%s;%s'>%s</span>", c, on and " font-weight:bold;" or "", name)
 end
+
+local DRUID_SHOWN = { arch_druid = true }   -- the arch tag among the buffs
 
 -- Guild.Druid: level, points, tree, arch (whether you are the arch druid now), harmony,
 -- staff {held, wielded, fireflies}, wand {held}, barkskin {on, shimmering}, pets, effects.
@@ -1019,8 +1084,10 @@ function N.render_druid(g)
     N.gPetsShown = math.min(#pets, max)
     if N.gW then fit_guild(N.gW, N.gH) end
   end
-  local st = type(g.staff) == "table" and g.staff or {}
   local bk = type(g.barkskin) == "table" and g.barkskin or {}
+  N.buffs.update(tonumber(bk.on) == 1 and { barkskin = true } or {})
+  N.draw_bark()
+  local st = type(g.staff) == "table" and g.staff or {}
   local hm = tonumber(g.harmony) or 0
   local staff = tonumber(st.wielded) == 1 and "staff (wielded)" or (tonumber(st.held) == 1 and "staff" or nil)
   local gear = {}
@@ -1029,12 +1096,16 @@ function N.render_druid(g)
     tonumber((type(g.wand) == "table" and g.wand or {}).held) == 1)
   local buffs = {
     tag("arch", tonumber(g.arch) == 1),
-    tag("barkskin", tonumber(bk.on) == 1, tonumber(bk.shimmering) == 1),
     tag("fireflies", tonumber(st.fireflies) == 1),
     tag(hm > 1 and ("harmony " .. hm) or "harmony", hm > 0),
   }
   local H = "color:#e0b64a; font-weight:bold;"
-  local fx = list(g.effects, nil)
+  -- effects the pane already shows elsewhere
+  local fx = {}
+  for _, e in ipairs(type(g.effects) == "table" and g.effects or {}) do
+    if not DRUID_SHOWN[e] then fx[#fx + 1] = e end
+  end
+  fx = list(fx, nil)
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Points</td><td>%s</td></tr>" ..
@@ -1383,10 +1454,11 @@ end
 -- re-render the card every 20s so XP/hr stays live (and decays) between Char.Status messages
 if N.rateTimer then killTimer(N.rateTimer) ; N.rateTimer = nil end
 N.rateTimer = tempTimer(20, function() if next(N.st) then N.status(N.st) end end, true)
--- count the Strigoi cooldown bars down between messages
+-- count the Strigoi cooldown bars and the barkskin bar down between messages
 if N.cdTimer then killTimer(N.cdTimer) ; N.cdTimer = nil end
 N.cdTimer = tempTimer(1, function()
-  if N.guildName == "Strigoi" and next(N.cdOn) then N.draw_cooldowns() end
+  if N.guildName == "Strigoi" and next(N.cd.on) then N.draw_cooldowns() end
+  if N.guildName == "Druid" and next(N.buffs.on) then N.draw_bark() end
 end, true)
 N.relayout()
 N.register()
