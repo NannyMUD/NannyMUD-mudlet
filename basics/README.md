@@ -18,7 +18,9 @@ you want both, and they share one layout.
 - **Guild pane**, for the Strigoi so far: guild level and points, penalty, wasp, your stack,
   and your stats with the guild's changes and harvest gains shown beside each. A bar per
   cooldown fills as it recharges. The game does not say how long a cooldown lasts, so
-  NannyBasics times each one as you use it; until it has, the bar counts up instead.
+  NannyBasics times each one as you use it; until it has, the bar counts up instead. Each
+  power has an icon, on its bar and in your stack: dark tinted symbols by default, or
+  emoji with 'nanny icons emoji' ('nanny icons dark' switches back).
 - **Chat pane**: one tab per channel, plus an "All" tab. A tab that gets a message while you
   are reading another one lights up.
 - **GMCP log**, hidden by default (`nanny log`), for seeing the raw data.

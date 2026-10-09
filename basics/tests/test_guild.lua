@@ -17,6 +17,8 @@ local HERE = (debug.getinfo(1, "S").source:match("^@(.*[/\\])") or "./") .. "../
 dofile(HERE .. "border.lua")
 dofile(HERE .. "nannybasics.lua")
 local N = NannyBasics
+local default_dark = N.iconSet == "dark"
+N.iconSet = "emoji"   -- the emoji checks below; the dark set is tested on its own
 
 -- record what the pane widgets are given
 local rec = {}
@@ -34,6 +36,7 @@ local fails = 0
 local function check(ok, msg) print((ok and "ok   " or "FAIL ") .. msg) ; if not ok then fails = fails + 1 end end
 
 check(MudletBorders.where("nanny:guild") == nil, "no guild data yet: guild pane parked")
+check(default_dark, "the dark icons are the default")
 
 N.on_event(nil, "gmcp.Guild.Strigoi")   -- gmcp table empty: v is nil, must not error
 gmcp.Guild = { Strigoi = {
@@ -66,6 +69,21 @@ check(rec.pen[3] == "Penalty  40%" and N.gPenCol == "#b03030", "penalty 40% turn
 check(rec.wasp[3] == "Wasp: not out", "wasp not out")
 check(rec.txt:find("2/6 &#183; claw <span style='font-size:13pt;'>🩸</span>", 1, true),
   "stack: claw as text (no icon), drain as its icon")
+gmcp.Guild.Strigoi = { stack = { "acidic touch two", "shadow leeches of essence" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(rec.txt:find("🧪</span><sub style='color:#e0b64a; font-weight:bold;'>2</sub> " ..
+  "<span style='font-size:13pt;'>🪱</span><sub style='color:#e0b64a; font-weight:bold;'>2</sub>", 1, true),
+  "variants sharing an icon carry their number")
+-- the dark set: tinted glyphs, asking for the plain form of the skull
+N.iconSet = "dark"
+gmcp.Guild.Strigoi = { stack = { "skullburst", "acidic touch one" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(rec.txt:find("<span style='font-size:14pt; color:#d8cfb8;'>☠\239\184\142</span> " ..
+  "<span style='font-size:14pt; color:#8aa83a;'>☣\239\184\142</span><sub", 1, true),
+  "dark set: skull in bone, acid in rot, the number kept")
+N.iconSet = "emoji"
+gmcp.Guild.Strigoi = { stack = { "claw", "drain" } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.txt:find(">Int</td><td align='right'>? <span style='color:#6fb8e0;'>(+3)</span>", 1, true),
   "harvest-only change: no guild parenthesis, harvest in its own colour")
 check(rec.txt:find("? <span style='color:#70c070;'>(+2)</span>", 1, true), "no base stats yet: ? and the change")
@@ -134,6 +152,11 @@ gmcp.Guild.Strigoi = { active = { "purge_of_flesh", "shadow_curse" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(cdRec[1][3]:find("^🍖  purge of flesh") and cdRec[2][3]:find("^🪱  shadow curse"),
   "an icon found by the first word: purge, shadow")
+N.iconSet = "dark"
+N.draw_cooldowns()
+check(cdRec[1][3]:find("^<span style='color:#d8cfb8;'>⚗\239\184\142</span>  purge of flesh"),
+  "dark set on a bar: the glyph in bone " .. tostring(cdRec[1][3]))
+N.iconSet = "emoji"
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 

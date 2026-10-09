@@ -721,9 +721,66 @@ N.STRIGOI_ICONS = {
   wildbound_stoneform = "🪨", wildbound_ghostveil = "👤", wildbound_ironmaw = "🦈",
   soulhail = "🧊", embrace = "🦇",
 }
-local function power_icon(name)
+-- variants that share an icon get a small number beside it in the stack
+N.STRIGOI_MARKS = {
+  acidic_touch_one = 1, acidic_touch_two = 2,
+  shadow_leeches_of_vitality = 1, shadow_leeches_of_essence = 2, shadow_leeches_of_soul = 3,
+}
+local function power_mark(name)
+  return N.STRIGOI_MARKS[tostring(name):lower():gsub("%s+", "_")]
+end
+
+-- The dark set: plain symbol glyphs, tinted. Blood for feeding and wounds, bone for death,
+-- bruise for the spectral, rot for curses and acid.
+local BLOOD, BONE, BRUISE, ROT = "#b02a2a", "#d8cfb8", "#9a7ad0", "#8aa83a"
+N.STRIGOI_DARK = {
+  drain = { "†", BLOOD }, foresee = { "☽", BRUISE }, mark = { "⌖", BLOOD },
+  soultick = { "⧗", BONE }, evaluate = { "◉", BONE }, morph = { "☿", BRUISE },
+  bane = { "⛓", ROT }, hemal = { "☩", BLOOD }, phantom = { "♆", BRUISE },
+  phantom_claws = { "⚔", BONE }, phantom_rend = { "✖", BLOOD }, phantom_vitalash = { "❥", BLOOD },
+  phantom_wraith = { "♆", BRUISE }, revivus = { "☥", BONE }, graveveil = { "⚰", BONE },
+  shift = { "⇅", BLOOD }, harvest = { "♄", BONE }, purge = { "⚗", ROT }, shadow = { "☾", BRUISE },
+  timewrap = { "♾", BRUISE }, wasp = { "✴", ROT }, wither = { "❧", ROT },
+  prescience = { "⊙", BRUISE }, vex = { "✠", BLOOD }, vex_of_the_mighty = { "♜", BLOOD },
+  vex_of_the_storm = { "☈", BRUISE }, vex_of_the_sage = { "☉", BRUISE },
+  vex_of_the_steadfast = { "♖", BONE }, vex_of_the_unbroken = { "▣", BONE },
+  ["vex_of_the_sharp-eyed"] = { "◎", BLOOD }, acidic = { "☣", ROT }, rejuvenate = { "☤", BONE },
+  skullburst = { "☠", BONE }, neutrino = { "⚛", BRUISE }, soulstrike = { "☄", BRUISE },
+  umbra = { "◐", BRUISE }, wildbound = { "♞", BONE }, wildbound_razorwind = { "≋", BONE },
+  wildbound_stoneform = { "◆", BONE }, wildbound_ghostveil = { "◌", BRUISE },
+  wildbound_ironmaw = { "▼", BLOOD }, soulhail = { "❄", BRUISE }, embrace = { "⛧", BLOOD },
+}
+-- U+FE0E asks for the plain glyph where a font also has a coloured emoji for it (the skull)
+local TEXT_FORM = "\239\184\142"
+
+-- which set: "dark" (the default) or "emoji", kept in the profile directory
+local function icons_file() return getMudletHomeDir() .. "/nanny_icons.txt" end
+if not N.iconSet then
+  local fh = io.open(icons_file(), "r")
+  N.iconSet = fh and fh:read("*l") or "dark"
+  if fh then fh:close() end
+  if N.iconSet ~= "emoji" then N.iconSet = "dark" end
+end
+
+local function lookup(t, name)
   local k = tostring(name):lower():gsub("%s+", "_")
-  return N.STRIGOI_ICONS[k] or N.STRIGOI_ICONS[k:match("^[^_]+")]
+  return t[k] or t[k:match("^[^_]+")]
+end
+local function power_icon(name)
+  if N.iconSet == "dark" then
+    local d = lookup(N.STRIGOI_DARK, name)
+    return d and (d[1] .. TEXT_FORM), d and d[2]
+  end
+  return lookup(N.STRIGOI_ICONS, name)
+end
+-- An icon as HTML: in the stack at size, a dark glyph in its tint; on a bar, a dark glyph
+-- in bone, since a tint can vanish into the bar's colour.
+local function icon_html(name, on_bar)
+  local icon, tint = power_icon(name)
+  if not icon then return nil end
+  if on_bar then return tint and ("<span style='color:" .. BONE .. ";'>" .. icon .. "</span>") or icon end
+  return "<span style='font-size:" .. (tint and "14" or "13") .. "pt;" ..
+    (tint and (" color:" .. tint .. ";") or "") .. "'>" .. icon .. "</span>"
 end
 
 -- Strigoi cooldowns: every name in "active" but the wasp (it has its own gauge) and the
@@ -798,10 +855,10 @@ function N.draw_cooldowns()
   local names, now = cd_names(), getEpoch()
   for i, k in ipairs(names) do
     local g, on, len = cd_row(i), N.cdOn[k], cd_length(k)
-    local icon = power_icon(k)
-    local label, col = (icon and icon .. "  " or "") .. k:gsub("_", " "), "#4a5a9a"
+    local icon, dark = icon_html(k, true), N.iconSet == "dark"
+    local label, col = (icon and icon .. "  " or "") .. k:gsub("_", " "), dark and "#3b2a55" or "#4a5a9a"
     if not on then
-      col = "#3a8f3a"
+      col = dark and "#6e1c1c" or "#3a8f3a"
       g:setValue(1, 1, label .. "  ready")
     elseif len then
       local left = math.max(0, math.ceil(on.t + len - now))
@@ -809,7 +866,7 @@ function N.draw_cooldowns()
     else
       g:setValue(0, 1, label .. "  " .. math.floor(now - on.t) .. "s, learning")
     end
-    if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, "#16182a") end
+    if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, dark and "#140e1a" or "#16182a") end
   end
   if #names ~= (N.gCdShown or 0) then N.gCdShown = #names ; N.relayout() end   -- a new row
 end
@@ -860,8 +917,10 @@ local function stack_icons(st)
   local out = {}
   for i, x in ipairs(st) do
     local name = type(x) == "table" and json(x) or tostring(x)
-    local icon = power_icon(name)
-    out[i] = icon and ("<span style='font-size:13pt;'>" .. icon .. "</span>") or esc(name)
+    local icon, mark = icon_html(name), power_mark(name)
+    out[i] = icon and (icon ..
+      (mark and ("<sub style='color:#e0b64a; font-weight:bold;'>" .. mark .. "</sub>") or ""))
+      or esc(name)
   end
   return table.concat(out, " ")
 end
@@ -1269,6 +1328,16 @@ function N.cmd(arg)
       say(path == "" and "back to the built-in copy from the next start." or
           ("loading from " .. path .. "; 'nanny reload' now."))
     end
+  elseif verb == "icons" then
+    if rest ~= "emoji" and rest ~= "dark" then
+      say("icons: " .. N.iconSet .. ". 'nanny icons emoji' or 'nanny icons dark' to switch.")
+      return
+    end
+    N.iconSet = rest
+    local fh = io.open(icons_file(), "w")
+    if fh then fh:write(rest) ; fh:close() end
+    if N.guildName == "Strigoi" then N.guild("Guild.Strigoi", {}) end
+    say("icons: " .. rest .. ".")
   elseif arg == "reload" then
     if N.SRC == "" then say("no source file set: 'nanny src <path to nannybasics.lua>' first.") return end
     local ok, err = N.load_file()
@@ -1285,6 +1354,7 @@ function N.cmd(arg)
         "\n  'nanny place <comp> <cell>' also moves a pane; 'nanny reset' restores the default." ..
         "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
         "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
+        "\n  'nanny icons dark|emoji' picks the guild pane's icons." ..
         "\n  'nanny update' installs the newest release. This is NannyBasics " .. N.VERSION .. ".")
   end
 end
