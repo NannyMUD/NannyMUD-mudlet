@@ -647,6 +647,13 @@ alias: typing `bank` is `mapgoto` to it. A bare `mapmark` stores "here", and
 `mapreturn` walks back to it: mark, go and sell, return. `mapmarks` lists,
 `mapunmark` forgets and frees the word.
 
+Setting or removing a named mark calls `saveMap()` at once (2026-10-12). Until
+then a mark reached disk only with some other save, a recorded typed exit or
+Mudlet's own save on a clean close, so a crash lost every mark since. Rooms and
+exits hid this: the server sends them again as you walk, and a mark exists
+nowhere else. "here" does not save. It is set often and is cheap to lose, and a
+full map save is a pause the player would feel on every mark, sell, return.
+
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the
 server said. The walk remembers the rooms its path passes (`walk_steps`) so

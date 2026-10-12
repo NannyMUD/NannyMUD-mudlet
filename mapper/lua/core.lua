@@ -5716,6 +5716,10 @@ local function mark_name(arg)
   arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", ""):lower()
   return arg == "" and "here" or arg
 end
+-- A named mark saves the map at once; "here" does not.
+local function mark_save(name)
+  if name ~= "here" and type(saveMap) == "function" then pcall(saveMap) end
+end
 function elro.mark_find(name)
   for id in pairs(elro.cs_all_rooms()) do
     if roomExists(id) and getRoomUserData(id, MARK) == name then return id end
@@ -5761,6 +5765,7 @@ function elro.cmd_mark(arg)
   local old = elro.mark_find(name)
   if old and old ~= elro.current then setRoomUserData(old, MARK, "") end
   setRoomUserData(elro.current, MARK, name)
+  mark_save(name)
   if name == "here" then
     cecho(string.format("\n<green>[elro]: 'here' is now %s (%d). 'mapreturn' walks back.\n<reset>",
           getRoomName(elro.current) or "this room", elro.current))
@@ -5788,6 +5793,7 @@ function elro.cmd_unmark(arg)
   local id = elro.mark_find(name)
   if not id then cecho("\n<red>[elro]: no mark called '" .. name .. "'.\n<reset>") return end
   setRoomUserData(id, MARK, "")
+  mark_save(name)
   elro.mark_alias(name, false)
   cecho("\n<green>[elro]: mark '" .. name .. "' removed.\n<reset>")
 end

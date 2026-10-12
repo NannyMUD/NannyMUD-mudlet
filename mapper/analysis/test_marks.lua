@@ -78,6 +78,15 @@ elro.cmd_mark("north")
 eq(said[#said]:find("a word the game needs", 1, true) ~= nil, true, "a direction is refused as a name")
 elro.cmd_mark("two words")
 eq(said[#said]:find("one word", 1, true) ~= nil, true, "a name is one word")
+-- a named mark is on disk at once; 'here' waits for the next save
+local saves = 0
+saveMap = function() saves = saves + 1 end
+elro.current = 2 ; elro.cmd_mark()
+eq(saves, 0, "a bare mapmark does not save the map")
+elro.cmd_mark("inn")
+eq(saves, 1, "a named mark saves the map")
+elro.cmd_unmark("inn")
+eq(saves, 2, "...and so does forgetting one")
 -- a reload rebuilds the aliases from the marks in the map
 elro.current = 2 ; elro.cmd_mark("bank")
 aliases = {}
