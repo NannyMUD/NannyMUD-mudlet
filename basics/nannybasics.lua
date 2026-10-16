@@ -8,7 +8,7 @@
 
 NannyBasics = NannyBasics or {}
 local N = NannyBasics
-N.VERSION = "0.8.1"
+N.VERSION = "0.8.2"
 
 -- Development only: a source file on disk wins over the copy built into the package. Off
 -- unless the profile has nanny_src.txt naming it ('nanny src <path>' writes that file).
