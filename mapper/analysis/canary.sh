@@ -334,7 +334,13 @@ out="${1:-$OUT/canary_out.txt}"
 # DIAGONAL walls -- dirs E/NW/SW, which admits no opposite pair and no zero-sum triple, so the ring
 # growth had no move at all and the face priced NOT MEASURABLE. 203 rooms, `lie 5 -> 1` for one
 # extra crossing, verified process-stable over 3 separate luajit runs before being added here.
-for f in lyr titleist rand dannoc_on gore_bug edoras cathbad_lie dagoth; do
+# ⭐ `pendant_loop` JOINED 2026-10-16 with the graded-pick crossing guard, for the same reason
+# again: 48 of 49 corpus dumps are unchanged by it. `crossing_scan` skipped an edge pair whose four
+# rooms were all in the moved set as a rigid move, but a graded `:dN` eq-plate moves them by
+# different vectors; `eq:6025:w2:d1` stretched 6018:6035 across the loop side 6024:6025 and was
+# picked clean. Now skipped only on one shared vector, as `rigid3` does: `cross 5 -> 4` (0 REAL),
+# the stair pendant 6035/6048 lands inside the loop. Process-stable over 3 separate runs.
+for f in lyr titleist rand dannoc_on gore_bug edoras cathbad_lie dagoth pendant_loop; do
   printf '%-12s %s\n' "$f" \
     "$(luajit analysis/test_dump_layout.lua "analysis/$f.txt" "$K" 2>&1 | tail -1 | sed 's/^[^ ]*  *[0-9.]*s  *//')" \
     >> "$out"

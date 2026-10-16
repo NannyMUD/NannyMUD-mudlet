@@ -618,7 +618,7 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
   -- `pull_makes_crossing`, so they must share one implementation and one definition of a crossing.
   -- `moved` restricts the probes; two edges wholly inside a rigidly moved set cannot change their
   -- crossing. The result is a set, so bucket order is irrelevant. `timeSlot` names the index-build accumulator.
-  local function crossing_scan(moved, v, timeSlot)
+  local function crossing_scan(moved, v, timeSlot, disp)
     local S = {}
     local proper = true   -- endpoint-on-edge touch = room-on-edge, not a crossing
     local floor, B = math.floor, (elro.crossBucket or 4)
@@ -629,6 +629,7 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
       local e1 = pedges[i]
       if (not moved) or moved[e1.u] or moved[e1.v] then
         local e1full = moved and moved[e1.u] and moved[e1.v]
+                       and (not disp or (disp[e1.u] ~= nil and disp[e1.u] == disp[e1.v]))
         local a, b = coord[e1.u], coord[e1.v]
         local axlo, axhi = (a[1] < b[1]) and a[1] or b[1], (a[1] > b[1]) and a[1] or b[1]
         local aylo, ayhi = (a[2] < b[2]) and a[2] or b[2], (a[2] > b[2]) and a[2] or b[2]
@@ -640,8 +641,10 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
               local e2 = l[t]
               if e2 ~= e1 and not seenj[e2] then
                 seenj[e2] = true
-                -- a rigid translation moves both edges together, so their crossing cannot change
-                if not (e1full and moved[e2.u] and moved[e2.v])
+                -- a rigid translation moves both edges together, so their crossing cannot change;
+                -- a graded pick (`disp`) is rigid only where all four moved by the same vector
+                if not (e1full and moved[e2.u] and moved[e2.v]
+                        and (not disp or (disp[e2.u] == disp[e1.u] and disp[e2.v] == disp[e1.u])))
                    and e1.u ~= e2.u and e1.u ~= e2.v and e1.v ~= e2.u and e1.v ~= e2.v then
                   local c, d = coord[e2.u], coord[e2.v]
                   -- bbox cull first: disjoint boxes cannot cross, and this is cheaper than 4 ori
@@ -682,7 +685,7 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
   end
   -- the two former entry points, kept as names because ~11 call sites read better for them
   local function crossing_set(v) return crossing_scan(nil, v) end
-  local function crossings_moved(moved, v) return crossing_scan(moved, v, "_cmBT") end
+  local function crossings_moved(moved, v, disp) return crossing_scan(moved, v, "_cmBT", disp) end
   -- An accepted crossing is a constraint: its endpoints lie on opposite sides of the wall. Kept as
   -- per-axis room-pair inequalities (the axial shadow: both x-ranges and y-ranges must overlap), each
   -- with a determined drag resolution. Weaker than the exact side condition for diagonals, but sound
@@ -894,7 +897,9 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
     local saved = {}
     for r in pairs(pick.set) do saved[r] = coord[r] end
     for r in pairs(pick.set) do local dx, dy = cand_shift(pick, r) ; coord[r] = { coord[r][1] + dx, coord[r][2] + dy } end
-    local after = crossings_moved(pick.set, v)
+    -- `disp` for graded picks, as in pull_makes_roomedge: without it a pair whose four rooms all
+    -- moved, by different amounts, is skipped as rigid and the pick reported clean
+    local after = crossings_moved(pick.set, v, pick.deltas and disp_of(pick) or nil)
     for r, c in pairs(saved) do coord[r] = c end
     -- Return ALL new crossing keys, sorted: `pairs(after)` order is hash-seed dependent.
     local newK = nil
