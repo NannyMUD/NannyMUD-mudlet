@@ -340,7 +340,13 @@ out="${1:-$OUT/canary_out.txt}"
 # different vectors; `eq:6025:w2:d1` stretched 6018:6035 across the loop side 6024:6025 and was
 # picked clean. Now skipped only on one shared vector, as `rigid3` does: `cross 5 -> 4` (0 REAL),
 # the stair pendant 6035/6048 lands inside the loop. Process-stable over 3 separate runs.
-for f in lyr titleist rand dannoc_on gore_bug edoras cathbad_lie dagoth pendant_loop; do
+# ⭐ `plate_lies` JOINED 2026-10-16 with the walk's lie guard, the only dump of 50 it moves.
+# `pull_makes_lie` compared lie COUNTS, so `eq:449:s1` shifted 446 and 454 south without their
+# east/west neighbours (two new lies) and passed as clean because the overlap it resolved had
+# lying edges of its own. It now refuses any lie key not present before, as the closure's
+# `new_lies` already did: `lie 4 -> 0`. The one crossing left is FORCED (442/457/458/459 form a
+# square with both diagonals as exits); its skew is a separate defect. Process-stable over 3 runs.
+for f in lyr titleist rand dannoc_on gore_bug edoras cathbad_lie dagoth pendant_loop plate_lies; do
   printf '%-12s %s\n' "$f" \
     "$(luajit analysis/test_dump_layout.lua "analysis/$f.txt" "$K" 2>&1 | tail -1 | sed 's/^[^ ]*  *[0-9.]*s  *//')" \
     >> "$out"

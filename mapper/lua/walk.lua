@@ -2049,16 +2049,17 @@ function elro.walk_branches(coord, adj, outwardSet, space, branchSet, units, art
       end
       return n, keys
     end
-    local before, kBefore = boundary_lies()
+    local _, kBefore = boundary_lies()
     apply_pull(pick)
-    local after, kAfter = boundary_lies()
+    local _, kAfter = boundary_lies()
     revert_pull(pick)
-    if after <= before then return false end
-    -- sorted, at most three: `pairs` order would make the name differ between runs
+    -- the SET difference, not the count: a pick that fixes one lie and makes another is not clean
     local fresh = {}
     for k in pairs(kAfter) do if not kBefore[k] then fresh[#fresh + 1] = k end end
+    if #fresh == 0 then return false end
+    -- sorted, at most three: `pairs` order would make the name differ between runs
     table.sort(fresh)
-    return true, (#fresh > 0) and table.concat(fresh, " ", 1, math.min(#fresh, 3)) or nil
+    return true, table.concat(fresh, " ", 1, math.min(#fresh, 3))
   end
 
   -- Total lying edges over every placed room at the current coordinates. The cascade needs an
