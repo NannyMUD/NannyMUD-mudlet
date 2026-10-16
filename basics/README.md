@@ -80,7 +80,14 @@ nanny off / nanny on       hide the whole panel (for a second session in MultiVi
 nanny log                  show or hide the GMCP log
 nanny hello                ask the game for the packages again
 nanny update               install the newest release
+nanny encoding on|off      repair å, ä and ö in other players' text, whatever their client sends
 ```
+
+Players' text reaches you in whatever encoding their own client uses, UTF-8 or an older one-byte
+set, and Mudlet reads the whole game with one setting, so some players' letters always come out
+wrong. NannyBasics therefore reads the game as Latin-1, which keeps every byte, and turns UTF-8 and
+Windows text back into the right letters; what you type goes out as Latin-1. This is on from the
+start. `nanny encoding off` puts back the encoding your profile had before.
 
 ## Development
 

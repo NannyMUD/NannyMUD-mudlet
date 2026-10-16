@@ -1553,7 +1553,139 @@ function N.check_latest()
   end)
 end
 
--- nanny [log | hello | reload | update | place <what> <where> | layout]
+-- ================= encoding =======================================================
+-- 'nanny encoding on': a player's text reaches us in whatever their client sent, UTF-8 or a
+-- one-byte set. Latin-1 decoding keeps every byte, so a stretch that is valid UTF-8 can be decoded
+-- again, and the 0x80-0x9F controls read as Windows-1252.
+local function enc_file() return getMudletHomeDir() .. "/nanny_encoding.txt" end
+
+N.CP1252 = { [0x80] = 0x20AC, [0x82] = 0x201A, [0x83] = 0x0192, [0x84] = 0x201E, [0x85] = 0x2026,
+  [0x86] = 0x2020, [0x87] = 0x2021, [0x88] = 0x02C6, [0x89] = 0x2030, [0x8A] = 0x0160,
+  [0x8B] = 0x2039, [0x8C] = 0x0152, [0x8E] = 0x017D, [0x91] = 0x2018, [0x92] = 0x2019,
+  [0x93] = 0x201C, [0x94] = 0x201D, [0x95] = 0x2022, [0x96] = 0x2013, [0x97] = 0x2014,
+  [0x98] = 0x02DC, [0x99] = 0x2122, [0x9A] = 0x0161, [0x9B] = 0x203A, [0x9C] = 0x0153,
+  [0x9E] = 0x017E, [0x9F] = 0x0178 }
+
+local function utf8_char(cp)
+  local f = math.floor
+  if cp < 0x80 then return string.char(cp)
+  elseif cp < 0x800 then return string.char(0xC0 + f(cp / 0x40), 0x80 + cp % 0x40)
+  elseif cp < 0x10000 then
+    return string.char(0xE0 + f(cp / 0x1000), 0x80 + f(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+  end
+  return string.char(0xF0 + f(cp / 0x40000), 0x80 + f(cp / 0x1000) % 0x40,
+                     0x80 + f(cp / 0x40) % 0x40, 0x80 + cp % 0x40)
+end
+
+-- s (UTF-8, as Mudlet hands a line over) as a list of code points
+local function codepoints(s)
+  local out, i, n = {}, 1, #s
+  while i <= n do
+    local b = s:byte(i)
+    local len = b >= 0xF0 and 4 or b >= 0xE0 and 3 or b >= 0xC0 and 2 or 1
+    local cp = b
+    if len > 1 and i + len - 1 <= n then
+      cp = b % (len == 2 and 0x20 or len == 3 and 0x10 or 0x08)
+      for k = 1, len - 1 do cp = cp * 0x40 + s:byte(i + k) % 0x40 end
+    else
+      len = 1
+    end
+    out[#out + 1] = cp
+    i = i + len
+  end
+  return out
+end
+
+-- The repairs a Latin-1-decoded line needs, in order: { { from, to }, ... }.
+function N.mojibake(s)
+  local cps, subs, i = codepoints(s), {}, 1
+  while i <= #cps do
+    local c, len, cp = cps[i], 0, nil
+    if c >= 0xC2 and c <= 0xDF then len = 2
+    elseif c >= 0xE0 and c <= 0xEF then len = 3
+    elseif c >= 0xF0 and c <= 0xF4 then len = 4 end
+    if len > 0 and i + len - 1 <= #cps then
+      -- the second byte's range rules out overlong forms, surrogates and code points past U+10FFFF
+      local lo, hi = 0x80, 0xBF
+      if c == 0xE0 then lo = 0xA0 elseif c == 0xED then hi = 0x9F
+      elseif c == 0xF0 then lo = 0x90 elseif c == 0xF4 then hi = 0x8F end
+      cp = c % (len == 2 and 0x20 or len == 3 and 0x10 or 0x08)
+      for k = 1, len - 1 do
+        local x = cps[i + k]
+        if x < (k == 1 and lo or 0x80) or x > (k == 1 and hi or 0xBF) then cp = nil ; break end
+        cp = cp * 0x40 + x % 0x40
+      end
+    end
+    if cp then
+      local from = {}
+      for k = 0, len - 1 do from[#from + 1] = utf8_char(cps[i + k]) end
+      subs[#subs + 1] = { table.concat(from), utf8_char(cp) }
+      i = i + len
+    else
+      if N.CP1252[c] then subs[#subs + 1] = { utf8_char(c), utf8_char(N.CP1252[c]) } end
+      i = i + 1
+    end
+  end
+  return subs
+end
+
+-- the trigger's work: swap only the broken pieces, so the line keeps its colours
+local function enc_line()
+  if not line:find("[\194\195]") then return end
+  for _, p in ipairs(N.mojibake(line)) do
+    if selectString(p[1], 1) > -1 then replace(p[2], true) end
+  end
+  deselect()
+end
+
+local function enc_trigger()
+  if N.encTrig then killTrigger(N.encTrig) ; N.encTrig = nil end
+  if N.encOn then N.encTrig = tempRegexTrigger("[^\\x00-\\x7f]", enc_line) end
+end
+
+-- Mudlet's own name for Latin-1, from its list
+local function latin1_name()
+  if type(getServerEncodingsList) ~= "function" then return nil end
+  for _, e in ipairs(getServerEncodingsList() or {}) do
+    local k = tostring(e):upper():gsub("[^%w]", "")
+    if k == "ISO88591" or k == "LATIN1" then return e end
+  end
+end
+
+-- on: read the game as Latin-1 and repair; off: back to the encoding there was before
+function N.encoding(on)
+  if on then
+    local lat = latin1_name()
+    if not lat or type(setServerEncoding) ~= "function" then
+      say("this Mudlet cannot set the server encoding.")
+      return false
+    end
+    local cur = type(getServerEncoding) == "function" and getServerEncoding() or nil
+    if cur and cur ~= lat then N.encPrev = cur end
+    setServerEncoding(lat)
+  elseif N.encOn and N.encPrev and type(setServerEncoding) == "function" then
+    setServerEncoding(N.encPrev)
+  end
+  N.encOn = on
+  local fh = io.open(enc_file(), "w")
+  if fh then fh:write((on and "on" or "off") .. "\n" .. (N.encPrev or "") .. "\n") ; fh:close() end
+  enc_trigger()
+  return true
+end
+
+-- on unless the player turned it off
+do
+  local fh = io.open(enc_file(), "r")
+  N.encOn = true
+  if fh then
+    N.encOn = fh:read("*l") ~= "off"
+    N.encPrev = fh:read("*l")
+    fh:close()
+  end
+  if N.encPrev == "" then N.encPrev = nil end
+end
+
+-- nanny [log | hello | reload | update | encoding | place <what> <where> | layout]
 function N.cmd(arg)
   arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local verb, rest = arg:match("^(%S+)%s*(.*)$")
@@ -1623,6 +1755,13 @@ function N.cmd(arg)
     if fh then fh:write(rest) ; fh:close() end
     if N.guildName == "Strigoi" then N.guild("Guild.Strigoi", {}) end
     say("icons: " .. rest .. ".")
+  elseif verb == "encoding" then
+    if rest == "on" or rest == "off" then
+      if not N.encoding(rest == "on") then return end
+    end
+    say(N.encOn and "encoding repair on: the game is read as Latin-1, and other players' " ..
+        "UTF-8 and Windows text is turned back into å, ä and ö. 'nanny encoding off' undoes it."
+        or "encoding repair off. 'nanny encoding on' repairs å, ä and ö sent by other players' clients.")
   elseif arg == "reload" then
     if N.SRC == "" then say("no source file set: 'nanny src <path to nannybasics.lua>' first.") return end
     local ok, err = N.load_file()
@@ -1640,6 +1779,7 @@ function N.cmd(arg)
         "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
         "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
         "\n  'nanny icons dark|emoji' picks the guild pane's icons, 'nanny stack chips|icons' the stack's look." ..
+        "\n  'nanny encoding on|off' repairs å, ä and ö in other players' text." ..
         "\n  'nanny update' installs the newest release. This is NannyBasics " .. N.VERSION .. ".")
   end
 end
@@ -1676,6 +1816,7 @@ N.cdTimer = tempTimer(1, function()
 end, true)
 N.relayout()
 N.register()
+if N.encOn then N.encoding(true) end
 if N.alias then killAlias(N.alias) end
 N.alias = tempAlias("^nanny(?:\\s+(.+))?$", function() N.cmd(matches[2]) end)
 if type(gmcp) == "table" then N.hello() end
