@@ -10,13 +10,17 @@ you want both, and they share one layout.
 - **Vitals bar** under the main text: HP and SP gauges that update as you fight and heal.
   The HP bar pulses, faster and brighter the lower it gets, once you drop below 40%. Above
   them, a **foe gauge**: who you are fighting and the shape they are in.
-- **Score card**: your name, level and guild, an XP bar that fills within your level (at
-  level 19 it shows your paragon level and the free experience toward the next), gauges for
+- **Score card**: your name, level and guild, a bar that fills with your NP within your level
+  (at level 19 it shows your paragon level and the free experience toward the next, counting
+  the million you keep after advancing). Past the target the rest of the bar turns gold, with
+  the surplus beside it. The game stops sending a target once you reach it, so NannyBasics
+  remembers each one for your character in the profile: a level it never saw short shows
+  plain XP. Then gauges for
   toxicity, fullness, soak and carried weight, and gold, quest points, XP per hour and stats.
 - **Party pane**: one row per member with HP and SP gauges, marked when they lead, follow,
   never follow, or are elsewhere.
 - **Guild pane**, for the Strigoi, druids, alchemists and vampires. For the Strigoi: guild
-  level and points, penalty, wasp, your stack,
+  level and points, guild points per hour since your last `soultick reset`, penalty, wasp, your stack,
   and your stats with the guild's changes and harvest gains shown beside each. A bar per
   cooldown fills as it recharges. The game does not say how long a cooldown lasts, so
   NannyBasics times each one as you use it; until it has, the bar counts up instead. Each

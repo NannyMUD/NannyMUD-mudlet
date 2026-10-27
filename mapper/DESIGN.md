@@ -654,6 +654,12 @@ exits hid this: the server sends them again as you walk, and a mark exists
 nowhere else. "here" does not save. It is set often and is cheap to lose, and a
 full map save is a pause the player would feel on every mark, sell, return.
 
+A room holds any number of marks, as a space-separated list in the one `mark`
+key (2026-10-17). It used to hold one, and a bare `mapmark` in a named room
+replaced the name while its alias stayed live, so typing the word said "no
+mark called" for a mark just set. Mark, sell, return starts in named rooms all
+the time. A map written with one name per room reads as a list of one.
+
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the
 server said. The walk remembers the rooms its path passes (`walk_steps`) so

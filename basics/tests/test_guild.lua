@@ -28,7 +28,7 @@ local function recorder(name)
   return setmetatable({}, { __index = function(t, k)
     if k == "echo" then return function(_, s) rec[name] = s end end
     if k == "setValue" then return function(_, v, m, s) rec[name] = { v, m, s } end end
-    if k == "front" then return any end
+    if k == "front" or k == "back" then return any end
     return function() return t end
   end })
 end
@@ -227,16 +227,59 @@ gmcp.Guild.Strigoi = { soultick = { guild_points = 0, hb = 0, combat_hb = 0 } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 check(rec.txt:find(">Soultick</td><td>0 gp</td>", 1, true), "no beats yet: total only, no division by zero")
 
+check(rec.txt:find(">GP/hr</td><td style='color:#b8a6e6;'>...</td>", 1, true), "no beats yet: GP/hr waits")
+-- GP/hr from soultick, 1800 beats an hour
+gmcp.Guild.Strigoi = { soultick = { guild_points = 89472, hb = 3728, combat_hb = 360 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(rec.txt:find(">GP/hr</td><td style='color:#b8a6e6;'>43k/hr</td>", 1, true), "89,472 gp in 3,728 beats is 43k/hr")
+gmcp.Guild.Strigoi = { soultick = { guild_points = 300, hb = 1800, combat_hb = 0 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(rec.txt:find(">300/hr</td>", 1, true), "under a thousand: no k")
+
 -- the score card: paragon level from (exp + needexp - baseexp), the live payload of plvl 20
 N.stTitle, N.stXp, N.stTxt = recorder("stTitle"), recorder("stXp"), recorder("stTxt")
 N.status({ level = 19, exp = 16007908, baseexp = 431524, needexp = 5423616, name = "Testchar",
   guild = "Strigoi", race = "human", gold = 1, qp = 1 })
 check(rec.stTitle:find("Level 19 &#183; Paragon 20 &#183;", 1, true), "paragon 20 on the subtitle")
-check(rec.stXp[1] == 16007908 - 431524 and rec.stXp[2] == 21000000
-  and rec.stXp[3] == "Paragon  15,576,384 / 21,000,000", "paragon bar " .. tostring(rec.stXp[3]))
+-- to paragon 21: 21M spent and 1M left, so 22M over baseexp
+check(rec.stXp[1] == 16007908 - 431524 and rec.stXp[2] == 22000000
+  and rec.stXp[3] == "Paragon  15,576,384 / 22,000,000", "paragon bar " .. tostring(rec.stXp[3]))
 check(not rec.stTxt:find(">NP<", 1, true), "no NP row")
-N.status({ level = 12, exp = 50000, baseexp = 40000, needexp = 10000 })
-check(not rec.stTitle:find("Paragon", 1, true) and rec.stXp[3] == "XP  50,000 / 60,000", "below 19: no paragon")
+check(N.lv.testchar.para == 20 and N.lv.testchar.base == 431524, "paragon level and baseexp learned")
+-- past the server's 21M the need fields are left out; the target still holds
+N.status({ level = 19, exp = 21781524, name = "Testchar" })
+check(N.st.needexp == nil and N.st.baseexp == nil, "a whole message drops the need it no longer carries")
+check(rec.stXp[3] == "Paragon  21,350,000 / 22,000,000" and N.stXpOver == false, "past 21M, short of 22M: still counting " .. tostring(rec.stXp[3]))
+N.status({ level = 19, exp = 22781524, name = "Testchar" })
+check(rec.stXp[1] == 22000000 and rec.stXp[2] == 22350000
+  and rec.stXp[3] == "Paragon  22,000,000 reached  +350,000", "reached: fill to the target, surplus beyond " .. tostring(rec.stXp[3]))
+check(rec.stTitle:find("Paragon 20", 1, true) and N.stXpOver == true, "...still Paragon 20, the surplus in gold")
+N.status({ gold = 5 })
+check(rec.stXp[3] == "Paragon  22,000,000 reached  +350,000", "a message without a level is merged")
+-- a new session that never saw the need: the learned target still applies
+N.st = {}
+N.status({ level = 19, exp = 22781524, name = "Testchar" })
+check(rec.stXp[3] == "Paragon  22,000,000 reached  +350,000", "a fresh session past the target still knows it")
+-- taking paragon 21 spends its 21M: the base moves up, and 23M is the next target
+N.status({ level = 19, exp = 22781524, baseexp = 21431524, needexp = 20650000, name = "Testchar" })
+check(rec.stXp[3] == "Paragon  1,350,000 / 23,000,000" and N.stXpOver == false, "advanced: the next target, gold gone " .. tostring(rec.stXp[3]))
+check(rec.stTitle:find("Paragon 21", 1, true), "...and the title says Paragon 21")
+-- below paragon: NP against the level's target, learned the same way
+N.status({ level = 12, exp = 1, np = 50000, neednp = 10000, basenp = 40000, name = "Lowchar" })
+check(not rec.stTitle:find("Paragon", 1, true) and rec.stXp[3] == "NP  50,000 / 60,000", "below 19: an NP bar " .. tostring(rec.stXp[3]))
+check(rec.stXp[1] == 10000 and rec.stXp[2] == 20000, "...filled within the level")
+N.status({ level = 12, exp = 1, np = 65000, name = "Lowchar" })
+check(rec.stXp[3] == "NP  60,000 reached  +5,000", "past it: reached, and the surplus " .. tostring(rec.stXp[3]))
+N.status({ level = 13, exp = 1, np = 65000, name = "Lowchar" })
+check(rec.stXp[3] == "XP 1", "a level not seen yet: plain XP")
+-- Mudlet merges each message into gmcp: a key the server stops sending stays unless cleared
+gmcp.Char = gmcp.Char or {}
+gmcp.Char.Status = { level = 12, exp = 1, np = 50000, neednp = 10000, basenp = 40000, name = "Lowchar" }
+N.on_event(nil, "gmcp.Char.Status")
+check(gmcp.Char.Status.neednp == nil and gmcp.Char.Status.np == 50000, "once read, only the need fields are cleared from gmcp")
+gmcp.Char.Status.np = 59000                     -- the next message, merged in, with no neednp
+N.on_event(nil, "gmcp.Char.Status")
+check(rec.stXp[3] == "NP  59,000 / 60,000", "a merged message uses the learned target, not a stale need")
 
 -- the druid pane, from live payloads: a pet, fireflies on, barkskin on
 N.gHead, N.gGp, N.gPen, N.gWasp, N.gTxt = recorder("head"), recorder("gp"), recorder("pen"), recorder("wasp"), recorder("txt")
@@ -379,5 +422,15 @@ check(rec.head:find("age 1h 15m", 1, true), "age under a day: hours and minutes"
 gmcp.Char.Vitals = { hp = 50, maxhp = 100, sp = 20, maxsp = 40 }
 N.on_event(nil, "gmcp.Char.Vitals")
 check(N.bloodMode == false and rec.hp[3] == "HP 50/100" and rec.sp[3] == "SP 20/40", "Char.Vitals again: HP and SP back")
+
+-- a reload over need fields an older copy left in gmcp drops them, as a restart would
+gmcp.Char.Status = { level = 19, exp = 21781524, baseexp = 431524, needexp = 1431524, name = "Testchar" }
+N.st = { level = 19, exp = 21781524, baseexp = 431524, needexp = 1431524, name = "Testchar" }
+-- a reload restyles the kept widgets: give it stubs, not the recorders
+N.stTitle, N.stXp, N.stTxt, N.hp, N.sp, N.foe = any, any, any, any, any, any
+N.gHead, N.gGp, N.gPen, N.gWasp, N.gTxt = any, any, any, any, any
+dofile(HERE .. "nannybasics.lua")
+check(gmcp.Char.Status.needexp == nil and N.st.needexp == nil and N.st.exp == 21781524, "reload: stale need fields dropped, the rest kept")
+check(N.lv.testchar.para == 21, "...and nothing learned from them")
 
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

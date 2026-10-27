@@ -41,18 +41,19 @@ elro.current = 1
 elro.cmd_mark()
 eq(getRoomUserData(1, "mark"), "here", "bare mapmark marks the room as 'here'")
 elro.cmd_mark("Shop")
-eq(getRoomUserData(1, "mark"), "shop", "a named mark, lower-cased, replaces the room's mark")
-eq(elro.mark_find("here"), nil, "...so 'here' is gone from it")
+eq(getRoomUserData(1, "mark"), "here shop", "a named mark, lower-cased, joins the room's marks")
+eq(elro.mark_find("here"), 1, "...so 'here' is still on it")
 
 elro.current = 3
 elro.cmd_mark("shop")
 eq(getRoomUserData(3, "mark"), "shop", "re-marking a name moves it to the new room")
-eq(getRoomUserData(1, "mark"), "", "...and clears it from the old one")
+eq(getRoomUserData(1, "mark"), "here", "...and takes only that name off the old one")
 
 elro.current = 1
 elro.cmd_return("shop")
 eq(walked, 3, "mapreturn walks to the mark")
 walked = nil
+elro.cmd_unmark("here")
 elro.cmd_return()
 eq(walked, nil, "no 'here' mark: no walk")
 eq(said[#said]:find("no mark called 'here'", 1, true) ~= nil, true, "...and says so")
@@ -62,7 +63,9 @@ elro.cmd_return("shop")
 eq(walked, nil, "already there: no walk")
 
 elro.cmd_mark()
-eq(getRoomUserData(3, "mark"), "here", "a room holds one mark: 'here' replaces 'shop' on it")
+eq(getRoomUserData(3, "mark"), "shop here", "a bare mapmark keeps the room's other marks")
+eq(elro.mark_find("shop"), 3, "...so 'shop' is still found there")
+eq(alias_for("shop") ~= nil, true, "...and its word still walks")
 elro.current = 1
 elro.cmd_mark("shop")
 elro.cmd_marks()
@@ -175,6 +178,22 @@ sent = {}
 elro.cmd_return()
 eq(#sent, 0, "at 'here' with no walk in flight: nothing sent")
 eq(said[#said]:find("you are at 'here'", 1, true) ~= nil, true, "...and it says so")
+
+-- two marks on one room: each moves or goes on its own
+elro.current = 2 ; elro.cmd_mark("mantle") ; elro.cmd_mark("here")
+eq(elro.mark_find("mantle"), 2, "mapmark here after mapmark mantle keeps mantle")
+eq(elro.mark_find("here"), 2, "...and sets here")
+elro.current = 3 ; elro.cmd_mark("here")
+eq(elro.mark_find("here"), 3, "'here' moves on")
+eq(elro.mark_find("mantle"), 2, "...and leaves mantle behind")
+elro.current = 2 ; elro.cmd_mark("here") ; elro.cmd_unmark("here")
+eq(elro.mark_find("mantle"), 2, "unmarking 'here' leaves mantle")
+elro.cmd_mark("here") ; elro.current = 1 ; elro.cmd_mark("mantle")
+eq(elro.mark_find("mantle"), 1, "mantle moves")
+eq(getRoomUserData(2, "mark"), "bank here", "...and the old room keeps its other names")
+elro.cmd_unmark("mantle")
+eq(elro.mark_find("here"), 2, "unmarking mantle leaves here")
+eq(alias_for("bank") ~= nil, true, "...and the other words still walk")
 
 print(string.format("test_marks: %d check(s), %d failure(s)", checks, fail))
 os.exit(fail > 0 and 1 or 0)

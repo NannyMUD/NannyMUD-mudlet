@@ -17,7 +17,7 @@
 -- set_hint, clear_width, is_dragging, reset, suspend, resume, is_suspended, save_state, and the
 -- MudletBordersChanged event. Raise REV with every change; a break needs a new global name.
 
-local REV = 2
+local REV = 3
 MudletBorders = MudletBorders or {}
 local B = MudletBorders
 if (B.REV or 0) > REV then return B end
@@ -26,6 +26,7 @@ B.REV = REV
 B.slots   = B.slots or {}     -- id -> { id, cross, hint, order, title, seq, cb, defCell }
 B.cellOf  = B.cellOf or {}    -- slot id -> cell name it sits in (nil = parked/hidden)
 B.last    = B.last or {}      -- edge -> last value handed to setBorder*, to skip no-ops
+B.margin  = B.margin or {}    -- edge -> the player's own border from Mudlet's preferences
 B.ovr     = B.ovr or {}       -- slot id -> size override from dragging a stack splitter
 B.nsz     = B.nsz or {}       -- "<splitkey>:<i>" -> size override from dragging a split bar
 B.ovrW    = B.ovrW or {}      -- edge -> panel thickness override from dragging an edge bar
@@ -76,9 +77,15 @@ local function save_state()
   if type(table.save) ~= "function" then return end
   pcall(table.save, cfg_path(), { ovr = B.ovr, ovrW = B.ovrW, nsz = B.nsz, cellOf = B.cellOf,
                                    ordOvr = B.ordOvr, parkedAt = B.parkedAt, tree = B.tree,
-                                   suspended = B._suspended })
+                                   margin = B.margin, last = B.last, suspended = B._suspended })
 end
 B.save_state = save_state
+-- borders change on every window resize; one write a second later is enough
+local function save_soon()
+  if type(tempTimer) ~= "function" then return save_state() end
+  if B._saveT then return end
+  B._saveT = tempTimer(1, function() B._saveT = nil ; save_state() end)
+end
 if not B._loaded then
   B._loaded = true
   if type(table.load) == "function" and type(io) == "table" then
@@ -86,7 +93,8 @@ if not B._loaded then
     if ok and there then
       local t = {}
       if pcall(table.load, cfg_path(), t) then
-        for _, k in ipairs({ "ovr", "ovrW", "nsz", "cellOf", "ordOvr", "parkedAt", "tree" }) do
+        for _, k in ipairs({ "ovr", "ovrW", "nsz", "cellOf", "ordOvr", "parkedAt", "tree",
+                             "margin", "last" }) do
           if type(t[k]) == "table" then B[k] = t[k] end
         end
         B._suspended = t.suspended and true or false
@@ -192,6 +200,7 @@ local function room_for(edge)
   local W, H = win_size()
   local span = (edge == "top" or edge == "bottom") and H or W
   return span - math.floor(span * B.TEXT_MIN) - 2 * B.GUT
+         - (B.margin[edge] or 0) - (B.margin[OPP[edge]] or 0)
 end
 local function edge_thick(edge)
   local a = want_thick(edge)
@@ -206,9 +215,23 @@ local function edge_thick(edge)
   return math.max(B.MIN, a)
 end
 B.total = edge_thick
+-- the player's own margin stays outermost; a panel and its gutter go inside it
 local function edge_reserve(edge)
   local c = edge_thick(edge)
-  return c > 0 and (c + B.GUT) or 0
+  return (B.margin[edge] or 0) + (c > 0 and (c + B.GUT) or 0)
+end
+
+-- A border that differs from what was last set here was changed by the player in Mudlet's
+-- preferences (this session, or saved with the profile since): the difference is their margin.
+local GET = { left = "getBorderLeft", right = "getBorderRight", top = "getBorderTop", bottom = "getBorderBottom" }
+local function adopt(edge)
+  local g, last = _G[GET[edge]], B.last[edge]
+  if type(g) ~= "function" or type(last) ~= "number" then return false end
+  local ok, cur = pcall(g)
+  if not ok or type(cur) ~= "number" or cur == last then return false end
+  B.margin[edge] = math.max(0, (B.margin[edge] or 0) + cur - last)
+  B.last[edge] = cur
+  return true
 end
 
 -- ---- layout ---------------------------------------------------------------------
@@ -407,10 +430,16 @@ function B.apply()
                 top = setBorderTop, bottom = setBorderBottom }
   -- Suspended (e.g. a secondary MultiView session that wants the space): give every border back,
   -- hide the handles, and move every pane off-screen. resume() lays it all out again.
+  local dirty = false
+  for _, edge in ipairs(EDGES) do if adopt(edge) then dirty = true end end
   if B._suspended then
     for _, edge in ipairs(EDGES) do
-      if B.last[edge] ~= 0 and type(set[edge]) == "function" then pcall(set[edge], 0) ; B.last[edge] = 0 end
+      local m = B.margin[edge] or 0
+      if B.last[edge] ~= m and type(set[edge]) == "function" and pcall(set[edge], m) then
+        B.last[edge] = m ; dirty = true
+      end
     end
+    if dirty then save_soon() end
     for _, s in pairs(B.slots) do if s.cb then pcall(s.cb, -10000, -10000, 1, 1) end end
     for _, l in pairs(B.handles) do pcall(function() l:hide() end) end
     hide_ov()
@@ -420,25 +449,27 @@ function B.apply()
   normalize()
   for _, edge in ipairs(EDGES) do
     local v = edge_reserve(edge)
-    if B.last[edge] ~= v and type(set[edge]) == "function" then
-      pcall(set[edge], v) ; B.last[edge] = v
+    if B.last[edge] ~= v and type(set[edge]) == "function" and pcall(set[edge], v) then
+      B.last[edge] = v ; dirty = true
     end
   end
+  if dirty and not B._dragging then save_soon() end
   local W, H = win_size()
+  local mL, mR, mT, mB = B.margin.left or 0, B.margin.right or 0, B.margin.top or 0, B.margin.bottom or 0
   B.byId, B.laidN, B.cellRect, hspecs = {}, {}, {}, {}
   for _, edge in ipairs(EDGES) do
     local T = edge_thick(edge)
     if T > 0 then
       local x, y, w, h
-      if edge == "right" then x, y, w, h = W - T, 0, T, H
-      elseif edge == "left" then x, y, w, h = 0, 0, T, H
-      elseif edge == "top" then x, y, w, h = edge_reserve("left"), 0, W - edge_reserve("left") - edge_reserve("right"), T
-      else x, y, w, h = edge_reserve("left"), H - T, W - edge_reserve("left") - edge_reserve("right"), T end
+      if edge == "right" then x, y, w, h = W - mR - T, mT, T, H - mT - mB
+      elseif edge == "left" then x, y, w, h = mL, mT, T, H - mT - mB
+      elseif edge == "top" then x, y, w, h = edge_reserve("left"), mT, W - edge_reserve("left") - edge_reserve("right"), T
+      else x, y, w, h = edge_reserve("left"), H - mB - T, W - edge_reserve("left") - edge_reserve("right"), T end
       -- the edge bar lives in the gutter on the panel's inner side
-      if edge == "right" then hspecs[#hspecs + 1] = { id = "edge:right", x = x - B.GUT, y = 0, w = B.GUT, h = H, meta = { kind = "edge", edge = edge } }
-      elseif edge == "left" then hspecs[#hspecs + 1] = { id = "edge:left", x = T, y = 0, w = B.GUT, h = H, meta = { kind = "edge", edge = edge } }
-      elseif edge == "top" then hspecs[#hspecs + 1] = { id = "edge:top", x = x, y = T, w = w, h = B.GUT, meta = { kind = "edge", edge = edge } }
-      else hspecs[#hspecs + 1] = { id = "edge:bottom", x = x, y = H - T - B.GUT, w = w, h = B.GUT, meta = { kind = "edge", edge = edge } } end
+      if edge == "right" then hspecs[#hspecs + 1] = { id = "edge:right", x = x - B.GUT, y = y, w = B.GUT, h = h, meta = { kind = "edge", edge = edge } }
+      elseif edge == "left" then hspecs[#hspecs + 1] = { id = "edge:left", x = x + T, y = y, w = B.GUT, h = h, meta = { kind = "edge", edge = edge } }
+      elseif edge == "top" then hspecs[#hspecs + 1] = { id = "edge:top", x = x, y = y + T, w = w, h = B.GUT, meta = { kind = "edge", edge = edge } }
+      else hspecs[#hspecs + 1] = { id = "edge:bottom", x = x, y = y - B.GUT, w = w, h = B.GUT, meta = { kind = "edge", edge = edge } } end
       lay_node(B.tree[edge], x, y, w, h)
     end
   end
@@ -559,10 +590,11 @@ local function hit(mx, my, id)
     end
   end
   local W, H = win_size()
-  if mx < EDGE_ZONE and edge_thick("left") == 0 then return { kind = "edge", edge = "left" } end
-  if mx > W - EDGE_ZONE and edge_thick("right") == 0 then return { kind = "edge", edge = "right" } end
-  if my < EDGE_ZONE and edge_thick("top") == 0 then return { kind = "edge", edge = "top" } end
-  if my > H - EDGE_ZONE and edge_thick("bottom") == 0 then return { kind = "edge", edge = "bottom" } end
+  local m = B.margin
+  if mx < (m.left or 0) + EDGE_ZONE and edge_thick("left") == 0 then return { kind = "edge", edge = "left" } end
+  if mx > W - (m.right or 0) - EDGE_ZONE and edge_thick("right") == 0 then return { kind = "edge", edge = "right" } end
+  if my < (m.top or 0) + EDGE_ZONE and edge_thick("top") == 0 then return { kind = "edge", edge = "top" } end
+  if my > H - (m.bottom or 0) - EDGE_ZONE and edge_thick("bottom") == 0 then return { kind = "edge", edge = "bottom" } end
   return nil
 end
 
@@ -588,10 +620,12 @@ local function show_target(t)
     -- side panels run full height; top and bottom span only the text between them
     local W, H = win_size()
     local l, r = edge_reserve("left"), edge_reserve("right")
-    if t.edge == "left" then show_ov("ghost", 0, 0, 200, H)
-    elseif t.edge == "right" then show_ov("ghost", W - 200, 0, 200, H)
-    elseif t.edge == "top" then show_ov("ghost", l, 0, W - l - r, 120)
-    else show_ov("ghost", l, H - 120, W - l - r, 120) end
+    local m = B.margin
+    local mT, mB = m.top or 0, m.bottom or 0
+    if t.edge == "left" then show_ov("ghost", m.left or 0, mT, 200, H - mT - mB)
+    elseif t.edge == "right" then show_ov("ghost", W - (m.right or 0) - 200, mT, 200, H - mT - mB)
+    elseif t.edge == "top" then show_ov("ghost", l, mT, W - l - r, 120)
+    else show_ov("ghost", l, H - mB - 120, W - l - r, 120) end
     hide_ov("ins")
   end
 end

@@ -5,7 +5,11 @@ local function L() local t={} ; local mt={__index=function() return function() r
 Geyser = { Label = { new = function() return L() end } }
 local W, H = 2560, 1143
 function getMainWindowSize() return W, H end
-function setBorderLeft() end function setBorderRight() end function setBorderTop() end function setBorderBottom() end
+local BORD = { left = 0, right = 0, top = 0, bottom = 0 }     -- the profile's borders
+function setBorderLeft(v) BORD.left = v end function setBorderRight(v) BORD.right = v end
+function setBorderTop(v) BORD.top = v end function setBorderBottom(v) BORD.bottom = v end
+function getBorderLeft() return BORD.left end function getBorderRight() return BORD.right end
+function getBorderTop() return BORD.top end function getBorderBottom() return BORD.bottom end
 function registerAnonymousEventHandler() end function killAnonymousEventHandler() end
 function getMudletHomeDir() return "." end
 function calcFontSize(n) return 8, 15 end
@@ -174,5 +178,33 @@ local newer = src:gsub("\nlocal REV = %d+\n", "\nlocal REV = " .. (rev + 1) .. "
 assert(loadstring(newer))()
 check(B.slot ~= live_slot and B.REV == rev + 1, "a newer copy replaced the code")
 check(B.where("nanny:status") == live_where, "and kept the layout state")
+
+-- 14. a left border set in Mudlet's preferences and saved with the profile survives a restart,
+-- and a panel opened on that edge goes inside it
+local function copy(t) if type(t) ~= "table" then return t end local o = {} for k, v in pairs(t) do o[k] = copy(v) end return o end
+local store
+table.save = function(_, t) store = copy(t) end
+table.load = function(_, t) for k, v in pairs(copy(store)) do t[k] = v end end
+io.exists = function() return store ~= nil end
+B.save_state()
+check(BORD.left == 0, "left border is 0 with no left panel")
+BORD.left = 10                                     -- the player's preference, saved in the profile
+local rightBefore = BORD.right
+MudletBorders = nil ; dofile(HERE .. "border.lua") ; B = MudletBorders
+B.slot("elromap:map",   { cell="map", cross=0.5, title="Map", cb=cb })
+B.slot("nanny:vitals",  { cell="bottom", cross=56, cb=cb, order=11 })
+B.slot("nanny:channels",{ cell="c2", cross=0.45, title="Chat", cb=cb, order=12 })
+B.slot("nanny:status",  { cell="c1", cross=0.45, hint=180, title="Score", cb=cb, order=13 })
+B.slot("nanny:party",   { cell="c1", cross=0.45, title="Party", cb=cb, order=14 })
+check(BORD.left == 10 and B.margin.left == 10, "after a restart the left border is still 10 (" .. BORD.left .. ")")
+check((B.margin.right or 0) == 0 and BORD.right == rightBefore, "the right border is unchanged (" .. BORD.right .. ")")
+drag("nanny:party", 20, H / 2)
+check(B.edge_of(B.where("nanny:party")) == "left", "Party opened a left panel")
+check(B.byId["nanny:party"].x == 10, "the left panel starts inside the margin (x " .. B.byId["nanny:party"].x .. ")")
+check(BORD.left == 10 + B.total("left") + B.GUT, "the left border is margin + panel + gutter (" .. BORD.left .. ")")
+BORD.left = BORD.left - 4 ; B.apply()             -- the preference lowered mid-session
+check(B.margin.left == 6, "a change in the preferences mid-session moves the margin (" .. B.margin.left .. ")")
+B.move("nanny:party", "c1")
+check(BORD.left == 6, "left panel closed: the border is the margin again (" .. BORD.left .. ")")
 
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

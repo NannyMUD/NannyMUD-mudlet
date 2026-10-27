@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
 -- which refuses to build if the two differ.
-elro.VERSION = "0.8.3"
+elro.VERSION = "0.8.4"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -5720,9 +5720,24 @@ end
 local function mark_save(name)
   if name ~= "here" and type(saveMap) == "function" then pcall(saveMap) end
 end
+-- A room may hold several marks: the key is a space-separated list of names.
+local function mark_list(id)
+  local t = {}
+  for w in (getRoomUserData(id, MARK) or ""):gmatch("%S+") do t[#t + 1] = w end
+  return t
+end
+local function mark_has(id, name)
+  for _, w in ipairs(mark_list(id)) do if w == name then return true end end
+  return false
+end
+local function mark_drop(id, name)
+  local keep = {}
+  for _, w in ipairs(mark_list(id)) do if w ~= name then keep[#keep + 1] = w end end
+  setRoomUserData(id, MARK, table.concat(keep, " "))
+end
 function elro.mark_find(name)
   for id in pairs(elro.cs_all_rooms()) do
-    if roomExists(id) and getRoomUserData(id, MARK) == name then return id end
+    if roomExists(id) and mark_has(id, name) then return id end
   end
 end
 -- The name is a command of its own: 'green' walks to the mark 'green'. The alias would eat
@@ -5744,8 +5759,11 @@ end
 function elro.mark_aliases_rebuild()
   for name in pairs(elro._markAliases) do elro.mark_alias(name, false) end
   for id in pairs(elro.cs_all_rooms()) do
-    local m = roomExists(id) and getRoomUserData(id, MARK) or ""
-    if m ~= "" and not MARK_TAKEN[m] then elro.mark_alias(m, true) end
+    if roomExists(id) then
+      for _, m in ipairs(mark_list(id)) do
+        if not MARK_TAKEN[m] then elro.mark_alias(m, true) end
+      end
+    end
   end
 end
 function elro.cmd_mark(arg)
@@ -5763,8 +5781,11 @@ function elro.cmd_mark(arg)
     cecho("\n<red>[elro]: '" .. name .. "' is a word the game needs; pick another.\n<reset>") return
   end
   local old = elro.mark_find(name)
-  if old and old ~= elro.current then setRoomUserData(old, MARK, "") end
-  setRoomUserData(elro.current, MARK, name)
+  if old and old ~= elro.current then mark_drop(old, name) end
+  if not mark_has(elro.current, name) then
+    local t = mark_list(elro.current) ; t[#t + 1] = name
+    setRoomUserData(elro.current, MARK, table.concat(t, " "))
+  end
   mark_save(name)
   if name == "here" then
     cecho(string.format("\n<green>[elro]: 'here' is now %s (%d). 'mapreturn' walks back.\n<reset>",
@@ -5792,7 +5813,7 @@ function elro.cmd_unmark(arg)
   local name = mark_name(arg)
   local id = elro.mark_find(name)
   if not id then cecho("\n<red>[elro]: no mark called '" .. name .. "'.\n<reset>") return end
-  setRoomUserData(id, MARK, "")
+  mark_drop(id, name)
   mark_save(name)
   elro.mark_alias(name, false)
   cecho("\n<green>[elro]: mark '" .. name .. "' removed.\n<reset>")
@@ -5802,8 +5823,9 @@ if type(tempTimer) == "function" then tempTimer(2, function() elro.mark_aliases_
 function elro.cmd_marks()
   local rows = {}
   for id in pairs(elro.cs_all_rooms()) do
-    local m = roomExists(id) and getRoomUserData(id, MARK) or ""
-    if m ~= "" then rows[#rows + 1] = { m, id } end
+    if roomExists(id) then
+      for _, m in ipairs(mark_list(id)) do rows[#rows + 1] = { m, id } end
+    end
   end
   table.sort(rows, function(a, b) return a[1] < b[1] end)
   cecho(string.format("\n<cyan>[elro] %d mark(s):<reset>\n", #rows))

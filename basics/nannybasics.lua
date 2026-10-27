@@ -8,7 +8,7 @@
 
 NannyBasics = NannyBasics or {}
 local N = NannyBasics
-N.VERSION = "0.8.3"
+N.VERSION = "0.8.4"
 
 -- Development only: a source file on disk wins over the copy built into the package. Off
 -- unless the profile has nanny_src.txt naming it ('nanny src <path>' writes that file).
@@ -507,6 +507,7 @@ local function style_status()
   N.stTitle:setStyleSheet("background-color: #16131f; color: #e6e0f0; padding: 3px; border-bottom: 1px solid #2a2436;")
   N.stXp.front:setStyleSheet("background-color: #6a4fb0; border-radius: 3px;")
   N.stXp.back:setStyleSheet("background-color: #241a3a; border-radius: 3px;")
+  N.stXpOver = false
   N.stXp.text:setStyleSheet("background-color: rgba(0,0,0,0); padding-left: 8px; font-weight: bold;")
   N.stTxt:setStyleSheet("background-color: #101010; color: #d0d0d0; padding: 4px; "
     .. "qproperty-alignment: 'AlignLeft | AlignTop';")
@@ -532,6 +533,11 @@ local function fit_status(w, h)
   fit_rows(h, rows, N.stTxt)
 end
 
+local function per_hour(r)
+  if r <= 0 then return "0/hr" end
+  return r >= 1000 and string.format("%.0fk/hr", r / 1000) or string.format("%.0f/hr", r)
+end
+
 -- XP gained per hour this session (the game's own card shows one; GMCP does not, so compute it).
 local function rate_str()
   local e = tonumber(N.st.exp) ; if not e then return "?" end
@@ -539,28 +545,78 @@ local function rate_str()
   if not N.xp0 then N.xp0, N.xpT0 = e, now ; return "..." end
   local dt = now - (N.xpT0 or now)
   if dt < 30 then return "..." end
-  local r = (e - N.xp0) / dt * 3600
-  if r <= 0 then return "0/hr" end
-  return r >= 1000 and string.format("%.0fk/hr", r / 1000) or string.format("%.0f/hr", r)
+  return per_hour((e - N.xp0) / dt * 3600)
 end
 
--- Char.Status is sent incrementally -- a combat update may carry only the changed fields (a new
--- exp, no neededexp) and replace the last -- so merge each message into a kept table and render
--- from that, or the XP total and the stats would blank out between full updates.
+-- The server sends Char.Status whole, and leaves the next level's needs out once they are met,
+-- so a message with a level replaces the kept table. Anything else is merged.
 N.st = N.st or {}
+
+-- What the server said while a level was still short, per character, kept in the profile so
+-- the card is right past the target and after a restart. A paragon's level and baseexp hold
+-- until the next advance; a level's NP target and base are fixed.
+local function levels_file() return getMudletHomeDir() .. "/nanny_levels.lua" end
+if not N.lv then
+  N.lv = {}
+  if type(table.load) == "function" then pcall(table.load, levels_file(), N.lv) end
+end
+local function level_rec(name)
+  local k = tostring(name):lower()
+  local L = N.lv[k]
+  if type(L) ~= "table" then L = {} ; N.lv[k] = L end
+  L.np = type(L.np) == "table" and L.np or {}
+  return L
+end
+-- Paragon level P+1 is (P+1) million spent over baseexp, the server's needexp target.
+local function learn_level(L, s, lvl, e, np)
+  local changed
+  local n, b = tonumber(s.needexp or s.neededexp), tonumber(s.baseexp)
+  if lvl == 19 and e and n and b then
+    local cost = e + n - b
+    if cost >= 1e6 and cost % 1e6 == 0 and (L.para ~= cost / 1e6 - 1 or L.base ~= b) then
+      L.para, L.base, changed = cost / 1e6 - 1, b, true
+    end
+  end
+  local nn, nb = tonumber(s.neednp), tonumber(s.basenp) or 0
+  if lvl and np and nn then
+    local t = L.np[lvl]
+    if not t or t.total ~= np + nn or t.base ~= nb then L.np[lvl], changed = { base = nb, total = np + nn }, true end
+  end
+  if changed and type(table.save) == "function" then pcall(table.save, levels_file(), N.lv) end
+end
+local function xp_back(over)
+  if N.stXpOver == over then return end
+  N.stXpOver = over
+  N.stXp.back:setStyleSheet("background-color: " .. (over and "#8a6a1a" or "#241a3a") .. "; border-radius: 3px;")
+end
+-- Mudlet merges each message into gmcp and never drops a key, so the fields the server sends
+-- only while they apply are cleared once read: the next message then says whether they still do.
+local STATUS_SOMETIMES = { "needexp", "neededexp", "baseexp", "neednp", "needgold", "basenp" }
+function N.status_consume(v)
+  if type(v) ~= "table" then return end
+  for _, k in ipairs(STATUS_SOMETIMES) do v[k] = nil end
+end
 function N.status(v)
   if type(v) ~= "table" then return end
+  if v.level ~= nil then N.st = {} end
   for k, val in pairs(v) do N.st[k] = val end
   local s = N.st
   local function g(k) return s[k] ~= nil and tostring(s[k]) or "?" end
-  -- needexp is experience still to go, so the next-level total is exp + needexp; baseexp is where
-  -- the level starts. At level 19 paragon level P+1 costs (P+1) million over baseexp.
-  local e, n, b = tonumber(s.exp), tonumber(s.needexp or s.neededexp), tonumber(s.baseexp) or 0
-  local para
-  if e and n and tonumber(s.level) == 19 then
-    local cost = e + n - b
-    if cost >= 1e6 and cost % 1e6 == 0 then para = cost / 1e6 - 1 end
+  local L = s.name and level_rec(s.name)
+  local lvl, e, np = tonumber(s.level), tonumber(s.exp), tonumber(s.np)
+  if L then learn_level(L, s, lvl, e, np) end
+  -- what counts toward the next level, and how much it takes
+  -- (P+1) million to take the next paragon level and a million left after it: (P+2) million.
+  -- The label counts a paragon's XP from baseexp, NP as it stands.
+  local para, unit, cur, need, shown
+  if L and lvl == 19 and L.para and e then
+    para, unit, shown = L.para, "Paragon", 0
+    cur, need = e - L.base, (L.para + 2) * 1e6
+  elseif L and lvl and L.np[lvl] and np then
+    local t = L.np[lvl]
+    unit, shown, cur, need = "NP", t.base, np - t.base, t.total - t.base
   end
+  local over = need and cur >= need
   if N.stTitle then
     N.stTitle:echo(string.format(
       "<center><b style='font-size:13pt;'>%s</b></center>" ..
@@ -568,10 +624,12 @@ function N.status(v)
       g("name"), g("level"), para and (" &#183; Paragon " .. para) or "", g("guild"), g("race")))
   end
   if N.stXp then
-    if e and n and para then
-      N.stXp:setValue(math.max(e - b, 0), e + n - b, "Paragon  " .. commas(e - b) .. " / " .. commas(e + n - b))
-    elseif e and n then
-      N.stXp:setValue(math.max(e - b, 0), math.max(e + n - b, 1), "XP  " .. commas(e) .. " / " .. commas(e + n))
+    xp_back(over and true or false)
+    if over then
+      -- the fill ends at the target, the gold beyond it is the surplus
+      N.stXp:setValue(need, math.max(cur, 1), unit .. "  " .. commas(need + shown) .. " reached  +" .. commas(cur - need))
+    elseif need then
+      N.stXp:setValue(math.max(cur, 0), math.max(need, 1), unit .. "  " .. commas(cur + shown) .. " / " .. commas(need + shown))
     elseif e then N.stXp:setValue(1, 1, "XP " .. commas(e)) end
   end
   if N.stTxt then
@@ -1126,10 +1184,13 @@ function N.guild(name, v)
   local tick = commas(gp) .. " gp"
   if hb > 0 then tick = tick .. " &#183; " .. commas(math.floor(gp / hb)) .. " per beat" end
   if chb > 0 then tick = tick .. " &#183; " .. commas(math.floor(gp / chb)) .. " per combat beat" end
+  -- since 'soultick reset', at a heartbeat of about 2 s: 1800 beats an hour
+  local gph = hb > 0 and per_hour(gp / hb * 1800) or "..."
   local H = "color:#e0b64a; font-weight:bold;"
   N.gTxt:echo(string.format(
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Soultick</td><td>%s</td></tr>" ..
+    "<tr><td style='%s'>GP/hr</td><td style='color:#b8a6e6;'>%s</td></tr>" ..
     "</table>" ..
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt; color:#dddddd;'>" ..
     "<tr><td style='%s'>Str</td><td align='right'>%s</td><td width='16'></td><td style='%s'>Int</td><td align='right'>%s</td></tr>" ..
@@ -1139,7 +1200,7 @@ function N.guild(name, v)
     "<table width='100%%' cellspacing='0' cellpadding='1' style='font-size:10pt;'>" ..
     "<tr><td style='%s'>Stack</td><td>%s</td></tr>" ..
     "</table>",
-    H, tick,
+    H, tick, H, gph,
     H, stat("str"), H, stat("int"), H, stat("dex"), H, stat("con"),
     H, stack_icons(st, g.stack_size)))
 end
@@ -1395,7 +1456,7 @@ function N.on_event(_, ev)
   if name == "Char.Vitals" then N.vitals(v)
   elseif name == "Char.Foe" then N.foe_show(v)
   elseif name == "Comm.Channel.Text" then N.channel(v)
-  elseif name == "Char.Status" then N.status(v)
+  elseif name == "Char.Status" then N.status(v) ; N.status_consume(v)
   elseif name == "Group.Info" then N.party(v)
   elseif name == "Guild.Druid.Owl" then N.owl(v)
   elseif N.GUILD_PANES[name:match("^Guild%.(.+)$") or ""] then N.guild(name, v) end
@@ -1800,7 +1861,15 @@ N.select(N.current or "All")
 if N.pulseTimer then killTimer(N.pulseTimer) ; N.pulseTimer = nil end
 N.vitals(at("Char.Vitals"))
 N.foe_show(at("Char.Foe"))
-N.status(at("Char.Status"))
+-- Need fields still in gmcp at load were left by a copy that did not clear them, so they are
+-- stale: drop them, as a restart would. Then draw the last message as read.
+local cs = at("Char.Status")
+if type(cs) == "table" then
+  for _, k in ipairs(STATUS_SOMETIMES) do
+    if cs[k] ~= nil then N.status_consume(cs) ; N.status_consume(N.st) ; break end
+  end
+end
+N.status(next(N.st) and N.st or cs)
 N.party(at("Group.Info"))
 for k, v in pairs(type(at("Guild")) == "table" and at("Guild") or {}) do
   if N.GUILD_PANES[k] then N.guild("Guild." .. k, v) end

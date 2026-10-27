@@ -23,6 +23,9 @@ gets told where to draw it.
 - Sizes and places are saved in the profile (`MudletBorders.lua`) and come back after a
   restart. Left and right panels never take more than the window minus a minimum for the text
   (25%); the same goes for top and bottom.
+- A border width the player sets in Mudlet's own preferences is kept as a margin on that
+  edge, outside any panel. Mudlet saves borders with the profile, so `border.lua` saves the
+  last values it set too; on load, a border that differs from that was changed by the player.
 
 The default cells are `left`, `top`, `bottom`, `map`, `c1` and `c2`. More appear when players
 split things; a pane always remembers where it was put.
