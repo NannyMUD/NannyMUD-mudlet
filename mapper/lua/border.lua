@@ -10,14 +10,17 @@
 -- draggable bar (a thin label living in the gutter, so it never sits under a widget). A pane
 -- registered with a title also gets a title strip; dragging the strip moves the pane into
 -- another cell, or splits a cell to make room for it. Sizes, placements and the tree persist.
+-- A pane whose owner gives an on_hide gets an X on its strip; right-clicking any strip or bar
+-- offers the closed panes back.
 --
 -- Singleton in a neutral global: every package carries a copy and the NEWEST revision wins,
 -- whatever the load order; an older copy loading later changes nothing. So the shared API may
 -- only grow: B.slot, park, move, remove, where, parked_cell, total, edge_of, cells, set_title,
--- set_hint, clear_width, is_dragging, reset, suspend, resume, is_suspended, save_state, and the
--- MudletBordersChanged event. Raise REV with every change; a break needs a new global name.
+-- set_hint, clear_width, is_dragging, reset, suspend, resume, is_suspended, save_state, close,
+-- open, is_closed, claim_screen, and the MudletBordersChanged event. Raise REV with every
+-- change; a break needs a new global name.
 
-local REV = 3
+local REV = 4
 MudletBorders = MudletBorders or {}
 local B = MudletBorders
 if (B.REV or 0) > REV then return B end
@@ -32,6 +35,8 @@ B.nsz     = B.nsz or {}       -- "<splitkey>:<i>" -> size override from dragging
 B.ovrW    = B.ovrW or {}      -- edge -> panel thickness override from dragging an edge bar
 B.ordOvr  = B.ordOvr or {}    -- slot id -> stack position set by dropping a pane into a cell
 B.parkedAt = B.parkedAt or {} -- slot id -> the cell a parked slot returns to
+B.closed  = B.closed or {}    -- slot id -> true while the player has it closed
+B.claimed = B.claimed or {}   -- package -> true once it has asked Mudlet's starter UI to stand aside
 B.handles = B.handles or {}   -- handle id -> Geyser.Label (bars and title strips)
 B.hmeta   = B.hmeta or {}     -- handle id -> drag descriptor
 B.byId    = B.byId or {}      -- slot id -> laid rect (title strip included)
@@ -77,7 +82,8 @@ local function save_state()
   if type(table.save) ~= "function" then return end
   pcall(table.save, cfg_path(), { ovr = B.ovr, ovrW = B.ovrW, nsz = B.nsz, cellOf = B.cellOf,
                                    ordOvr = B.ordOvr, parkedAt = B.parkedAt, tree = B.tree,
-                                   margin = B.margin, last = B.last, suspended = B._suspended })
+                                   margin = B.margin, last = B.last, closed = B.closed,
+                                   claimed = B.claimed, suspended = B._suspended })
 end
 B.save_state = save_state
 -- borders change on every window resize; one write a second later is enough
@@ -94,7 +100,7 @@ if not B._loaded then
       local t = {}
       if pcall(table.load, cfg_path(), t) then
         for _, k in ipairs({ "ovr", "ovrW", "nsz", "cellOf", "ordOvr", "parkedAt", "tree",
-                             "margin", "last" }) do
+                             "margin", "last", "closed", "claimed" }) do
           if type(t[k]) == "table" then B[k] = t[k] end
         end
         B._suspended = t.suspended and true or false
@@ -285,6 +291,11 @@ local function lay_cell(cell, x, y, w, h)
     if s.title then
       hspecs[#hspecs + 1] = { id = "title:" .. s.id, x = rx, y = ry, w = rw, h = SH, title = s.title,
                               meta = { kind = "pane", id = s.id } }
+      -- after the strip, so it is raised above it
+      if s.on_hide then
+        hspecs[#hspecs + 1] = { id = "close:" .. s.id, x = rx + rw - SH, y = ry, w = SH, h = SH,
+                                close = true, meta = { kind = "close", id = s.id } }
+      end
       cy, ch = ry + SH, rh - SH
     end
     if s.cb then pcall(s.cb, rx, cy, rw, math.max(1, ch)) end
@@ -345,30 +356,42 @@ local TITLE_CSS = {
   [true]  = "background-color: #3d3560; color: #ffffff; font-weight: bold; font-size: 9pt; "
          .. "padding-left: 6px; border-bottom: 1px solid #6a4fb0;",
 }
+local CLOSE_CSS = "QLabel{ background-color: #1c1a26; color: #8a83a0; font-weight: bold; font-size: 10pt; "
+               .. "border-bottom: 1px solid #2a2436; } QLabel::hover{ background-color: #6a2a3a; color: #ffffff; }"
 local function style(l, active)
-  pcall(function() l:setStyleSheet((l._title and TITLE_CSS or BAR_CSS)[active and true or false]) end)
+  local kind = l._kind or (l._title and "title" or "bar")
+  local css = kind == "close" and CLOSE_CSS or (kind == "title" and TITLE_CSS or BAR_CSS)[active and true or false]
+  pcall(function() l:setStyleSheet(css) end)
 end
 local function strip_text(l, title)
   if l._txt == title then return end
   pcall(function() l:echo("&#8801;&nbsp;" .. title) end) ; l._txt = title
 end
-local function make_handle(id, titled)
-  if B.handles[id] then return B.handles[id] end
-  if type(Geyser) ~= "table" or not Geyser.Label then return nil end
-  local ok, l = pcall(function()
-    return Geyser.Label:new({ name = "MB_" .. id, x = 0, y = 0, width = 1, height = 1 })
-  end)
-  if not ok or not l then return nil end
-  l._title = titled
-  style(l, false)
-  pcall(function() l:setClickCallback(function() B.drag_start(id) end) end)
-  pcall(function() l:setReleaseCallback(function() B.drag_end() end) end)
-  B.handles[id] = l
+-- kind: "bar", "title" or "close". Callbacks are wired again when a newer REV takes over.
+local function make_handle(id, kind)
+  local l = B.handles[id]
+  if not l then
+    if type(Geyser) ~= "table" or not Geyser.Label then return nil end
+    local ok, nl = pcall(function()
+      return Geyser.Label:new({ name = "MB_" .. id, x = 0, y = 0, width = 1, height = 1 })
+    end)
+    if not ok or not nl then return nil end
+    l = nl ; l._kind = kind
+    style(l, false)
+    if kind == "close" then pcall(function() l:echo("<center>&#215;</center>") end) end
+    B.handles[id] = l
+  end
+  if l._rev ~= REV then
+    l._rev = REV
+    pcall(function() l:setClickCallback(function(ev) B.click(id, ev) end) end)
+    pcall(function() l:setReleaseCallback(function() B.drag_end() end) end)
+  end
   return l
 end
 -- the pointer over a handle: resize arrows across a bar, a hand on a title strip
 local function cursor_for(m)
   if m.kind == "pane" then return "OpenHand" end
+  if m.kind == "close" then return "PointingHand" end
   local across_v
   if m.kind == "edge" then across_v = (m.edge == "top" or m.edge == "bottom")
   elseif m.kind == "split" then across_v = (m.dir == "v")
@@ -384,7 +407,7 @@ local function draw_handles()
   if type(Geyser) ~= "table" or not Geyser.Label then return end
   local used = {}
   for _, sp in ipairs(hspecs) do
-    local l = make_handle(sp.id, sp.title ~= nil)
+    local l = make_handle(sp.id, sp.title and "title" or (sp.close and "close" or "bar"))
     if l then
       used[sp.id] = true ; B.hmeta[sp.id] = sp.meta
       if not (B._drag and B._drag.hid == sp.id) then set_cursor(l, cursor_for(sp.meta)) end
@@ -718,7 +741,9 @@ end
 function B.drag_end()
   if B._dragTimer then pcall(killTimer, B._dragTimer) ; B._dragTimer = nil end
   local d = B._drag
-  if d and B.handles[d.hid] then
+  -- the release of a click that started no drag (an X, a right-click) has nothing to lay out
+  if not d then return end
+  if B.handles[d.hid] then
     style(B.handles[d.hid], false)
     if B.hmeta[d.hid] then set_cursor(B.handles[d.hid], cursor_for(B.hmeta[d.hid])) end
   end
@@ -729,11 +754,90 @@ function B.drag_end()
   save_state()
 end
 
+-- ---- the X and the right-click menu ---------------------------------------------
+-- a pane's name in the menu: its title up to the first separator, else its id after the owner
+local function short(s)
+  local t = s.title or s.id:match(":(.+)$") or s.id
+  return (t:gsub("%s*&#183;.*$", ""))
+end
+B.menuL = B.menuL or {}
+local MENU_CSS = "QLabel{ background-color: #1c1a26; color: #d8d0ea; font-size: 9pt; padding-left: 8px; "
+              .. "border: 1px solid #2a2436; } QLabel::hover{ background-color: #3d3560; color: #ffffff; }"
+local function menu_hide()
+  if B._menuT then pcall(killTimer, B._menuT) ; B._menuT = nil end
+  for _, l in ipairs(B.menuL) do pcall(function() l:hide() end) end
+end
+-- the menu closes once the pointer has been off it for a moment
+local function menu_linger(t)
+  if B._menuT then pcall(killTimer, B._menuT) ; B._menuT = nil end
+  if t and type(tempTimer) == "function" then
+    B._menuT = tempTimer(t, function() B._menuT = nil ; menu_hide() end)
+  end
+end
+local function menu_item(i)
+  if B.menuL[i] then return B.menuL[i] end
+  if type(Geyser) ~= "table" or not Geyser.Label then return nil end
+  local ok, l = pcall(function()
+    return Geyser.Label:new({ name = "MB_menu_" .. i, x = 0, y = 0, width = 1, height = 1 })
+  end)
+  if not ok or not l then return nil end
+  pcall(function() l:setStyleSheet(MENU_CSS) end)
+  pcall(function() l:setOnEnter(function() menu_linger(nil) end) end)
+  pcall(function() l:setOnLeave(function() menu_linger(0.4) end) end)
+  B.menuL[i] = l
+  return l
+end
+-- id: the pane right-clicked (nil from a bar). Offers to hide it, to show each closed pane, and a reset.
+function B.menu(id)
+  local items = {}
+  local s = id and B.slots[id]
+  if s and s.on_hide and not B.closed[id] then
+    items[#items + 1] = { "Hide " .. short(s), function() B.close(id) end }
+  end
+  local shut = {}
+  for cid in pairs(B.closed) do if B.slots[cid] then shut[#shut + 1] = cid end end
+  table.sort(shut, function(a, b) return short(B.slots[a]) < short(B.slots[b]) end)
+  for _, cid in ipairs(shut) do
+    items[#items + 1] = { "Show " .. short(B.slots[cid]), function() B.open(cid) end }
+  end
+  items[#items + 1] = { "Reset layout", function() B.reset() end }
+  local mx, my = mouse()
+  if not mx then return end
+  local W, H = win_size()
+  local iw, ih = 180, strip_h() + 6
+  local x, y = math.max(0, math.min(mx, W - iw)), math.max(0, math.min(my, H - ih * #items))
+  for i, it in ipairs(items) do
+    local l = menu_item(i)
+    if l then
+      local act = it[2]
+      pcall(function()
+        l:echo(it[1])
+        l:setClickCallback(function() menu_hide() ; act() end)
+        l:move(x, y + (i - 1) * ih) ; l:resize(iw, ih) ; l:show()
+      end)
+      if type(raiseWindow) == "function" then pcall(raiseWindow, "MB_menu_" .. i) end
+    end
+  end
+  for i = #items + 1, #B.menuL do pcall(function() B.menuL[i]:hide() end) end
+  menu_linger(3)                                   -- in case the pointer never enters it
+end
+-- every handle's click: a right-click opens the menu, the X closes its pane, the rest drag
+function B.click(hid, ev)
+  menu_hide()
+  local m = B.hmeta[hid]
+  if type(ev) == "table" and ev.button == "RightButton" then
+    return B.menu(m and (m.kind == "pane" or m.kind == "close") and m.id or nil)
+  end
+  if m and m.kind == "close" then return B.close(m.id) end
+  B.drag_start(hid)
+end
+
 -- ---- public ---------------------------------------------------------------------
 -- spec = { cell, cross, hint, order, title, cb }: cell is where it starts (kept across relayouts so
 -- a later move sticks); cross is the panel-thickness it suggests; hint is a fixed content size
 -- (nil = flex); order sorts within a cell; title, if given, adds a strip to drag the pane by;
--- cb(x,y,w,h) positions the widget.
+-- cb(x,y,w,h) positions the widget and must show it; on_hide(), if given, hides the widget and
+-- puts an X on the strip. A pane the player closed stays closed until open() or a reset.
 function B.slot(id, spec)
   local s = B.slots[id]
   if not s then B._seq = B._seq + 1 ; s = { id = id, seq = B._seq } ; B.slots[id] = s end
@@ -741,7 +845,16 @@ function B.slot(id, spec)
   s.hint  = tonumber(spec.hint)
   s.order = tonumber(spec.order) or 0
   s.title = spec.title
+  s.on_hide = spec.on_hide
   if spec.cb then s.cb = spec.cb end
+  if B.closed[id] then
+    if spec.cell ~= nil then s.defCell = spec.cell end
+    if B.cellOf[id] then B.parkedAt[id] = B.cellOf[id] ; B.cellOf[id] = nil end
+    B.parkedAt[id] = B.parkedAt[id] or s.defCell
+    if s.on_hide then pcall(s.on_hide) end
+    B.apply()
+    return
+  end
   local back = B.parkedAt[id]
   if back and B.cellOf[id] == nil and cellEdge[back] then B.cellOf[id] = back end
   B.parkedAt[id] = nil
@@ -759,9 +872,35 @@ function B.park(id)
 end
 function B.move(id, cell)
   if not cellEdge[cell] then return end
-  B.cellOf[id], B.ordOvr[id], B.parkedAt[id] = cell, nil, nil
+  B.cellOf[id], B.ordOvr[id], B.parkedAt[id], B.closed[id] = cell, nil, nil, nil
   prune() ; B.apply() ; save_state()
 end
+-- the player closing a pane (its X), and bringing it back to the cell it left
+function B.close(id)
+  local s = B.slots[id]
+  if not s or B.closed[id] then return end
+  B.closed[id] = true
+  if B.cellOf[id] then B.parkedAt[id] = B.cellOf[id] end
+  B.parkedAt[id] = B.parkedAt[id] or s.defCell
+  B.cellOf[id] = nil
+  if s.on_hide then pcall(s.on_hide) end
+  B.apply() ; save_state()
+  changed(id)
+end
+function B.open(id)
+  if not B.closed[id] then return end
+  B.closed[id] = nil
+  local s = B.slots[id]
+  if s then
+    local back = B.parkedAt[id]
+    B.cellOf[id] = (back and cellEdge[back] and back) or (s.defCell and cellEdge[s.defCell] and s.defCell)
+                   or first_leaf(B.tree.right)
+    B.parkedAt[id] = nil
+  end
+  B.apply() ; save_state()
+  changed(id)
+end
+function B.is_closed(id) return B.closed[id] and true or false end
 function B.cells() local c = {} for k in pairs(cellEdge) do c[#c + 1] = k end return c end
 function B.edge_of(cell) return cellEdge[cell] end
 function B.where(id) return B.cellOf[id] end
@@ -791,12 +930,17 @@ function B.set_hint(id, hint)
   B.apply()
 end
 
--- restore the default layout: the default tree, no dragged sizes, and each pane back in its
--- owner's default cell.
+-- restore the default layout: the default tree, no dragged sizes, closed panes open again, and
+-- each pane back in its owner's default cell.
 function B.reset()
   B.tree = default_tree() ; reindex()
   B.ovr, B.nsz, B.ovrW, B.ordOvr = {}, {}, {}, {}
   B.parkedAt = {}
+  for id in pairs(B.closed) do
+    local s = B.slots[id]
+    if s and s.defCell then B.cellOf[id] = s.defCell end
+  end
+  B.closed = {}
   for id, s in pairs(B.slots) do
     if s.defCell and B.cellOf[id] then B.cellOf[id] = s.defCell
     elseif s.defCell then B.parkedAt[id] = s.defCell end
@@ -810,6 +954,20 @@ end
 function B.suspend() B._suspended = true ; save_state() ; B.apply() end
 function B.resume() B._suspended = false ; save_state() ; B.apply() end
 function B.is_suspended() return B._suspended and true or false end
+
+-- Mudlet's starter interface (the mudlet-base-ui package) builds its own map, chat and bars and
+-- stands aside on the event Mudlet raises when a game installs its interface. A package laying
+-- out ours raises the same, once per package and profile, so a later 'baseui show' sticks.
+-- Returns true when it asked.
+function B.claim_screen(pkg)
+  local ui = rawget(_G, "BaseUI")
+  if B.claimed[pkg] or type(ui) ~= "table" or type(raiseEvent) ~= "function" then return false end
+  B.claimed[pkg] = true
+  save_state()
+  if type(ui.dormant) == "function" and ui.dormant() then return false end
+  pcall(raiseEvent, "sysServerGuiInstalled", pkg)
+  return true
+end
 
 if type(registerAnonymousEventHandler) == "function" then
   if B._resizeH and type(killAnonymousEventHandler) == "function" then

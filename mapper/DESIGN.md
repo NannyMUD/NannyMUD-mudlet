@@ -660,6 +660,30 @@ replaced the name while its alias stayed live, so typing the word said "no
 mark called" for a mark just set. Mark, sell, return starts in named rooms all
 the time. A map written with one name per room reads as a list of one.
 
+Room notes (`mapnote`, 2026-10-28) are lines in a `note` key beside the marks, for players
+who keep room inventories. Mudlet has no hover for map rooms, so a note shows where a click
+puts it: the map's info overlay names the selected room's notes. Adding one from the map
+goes through the command line (`mapnote #id `), the only text input Lua has. Unlike the
+walk commands, a lone `;` stays in a note: "orc; sword" is ordinary note text, and dropping
+it as a script's split line would lose what the player wrote.
+
+`mapimport` (2026-10-30) joins another profile's map into this one. Mudlet can only replace
+a map, so the other map file is loaded for a moment, read into a table, and this map loaded
+back from a save made just before, named like Mudlet's own so it is the newest map should
+anything stop half way. Nothing runs between the loads. The merge is a graph chokepoint like
+onRoom and follows its rules rather than replaying moves through it, because a replay would
+move the player and assign `via` in replay order: a room or exit this map lacks is added; an
+observed exit replaces an assumed one; otherwise this map's exit stays; a locked exit is never
+re-pointed. Two maps disagreeing is not counted as a maze mutation, unlike two walks: the area
+may have changed between the characters' visits, and one import brings dozens at once, which
+would fold ordinary rooms into maze submaps. The backup made at `confirm` has a name of its
+own (Mudlet starts from the newest map file by time, not name), because the save that ends
+the import lands in the same second often enough to overwrite a file named like Mudlet's, and
+`mapimport undo` would then load the import back. Room ids come from the
+server, so the same room has the same id in both maps and no matching is guessed. Coordinates
+come along only as a seed; new rooms are laid out like fresh exploring. Area merges and hint
+choices are taken only for areas this map says nothing about, and display settings never.
+
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the
 server said. The walk remembers the rooms its path passes (`walk_steps`) so

@@ -237,8 +237,15 @@ end
 -- reuses the embedded window's box and mapper, so the singleton map widget is never
 -- reparented; the coordinator just moves and resizes the box into its slot.
 local DOCK = "elromap:map"
+-- the player closed the docked map with the X on its strip
+local function dock_closed()
+  return type(MudletBorders) == "table" and type(MudletBorders.is_closed) == "function"
+    and MudletBorders.is_closed(DOCK)
+end
 local function dock_fit(x, y, w, h)
   if not elro.miniBox or w <= 0 or h <= 0 then return end
+  -- the X hid the box; laid out again means it was shown again
+  if elro.miniBox.hidden then quietly(function() elro.miniBox:show() ; elro.miniBox:lockContainer("full") end) end
   pcall(function() elro.miniBox:move(x, y) ; elro.miniBox:resize(w, h) end)
   -- refit is a createMapper at the new frame; skip it on the per-tick layouts of a live drag,
   -- the coordinator's final apply (drag end) does it once.
@@ -249,6 +256,7 @@ local function dock_slot()
   MudletBorders.slot(DOCK, {
     cell = "map", cross = elro._dockW or DOCK_W, hint = nil,   -- the map cell (top of the panel)
     order = 0, title = elro._dockTitle or "Map", cb = dock_fit,
+    on_hide = function() if elro.miniBox then pcall(function() elro.miniBox:hide() end) end end,
   })
 end
 
@@ -274,11 +282,17 @@ local function undock()
   compact_banner()
 end
 
-function elro.mapwin_dock(arg)
+function elro.mapwin_dock(arg, boot)
   if type(Adjustable) ~= "table" or not Geyser.Mapper or type(MudletBorders) ~= "table" then
     cecho("\n<red>[elro]: this Mudlet is too old for the docked map (needs 4.8).\n<reset>") return
   end
-  -- 'mapwin dock' with the dock already up closes it and gives the border back.
+  -- 'mapwin dock' brings back a map closed by its X; with the dock already up it closes it and
+  -- gives the border back.
+  if elro._mapDock and arg == nil and dock_closed() then
+    MudletBorders.open(DOCK)
+    say("map shown again. 'mapwin dock' closes it.")
+    return
+  end
   if elro._mapDock and arg == nil then
     undock()
     if elro.miniBox then pcall(function() elro.miniBox:unlockContainer() ; elro.miniBox:hide() end) end
@@ -308,11 +322,13 @@ function elro.mapwin_dock(arg)
   -- lands after this (seen at start-up) does not hide the docked map
   pcall(function() box:save() end)
   dock_slot()                                         -- reserves the edge and lays it out
+  if dock_closed() and not boot then MudletBorders.open(DOCK) end   -- asked for, so not closed
   banner_off()
   if elro.miniMap and type(raiseWindow) == "function" then pcall(raiseWindow, "mapper") end
   local at = elro.view_room() or (type(getPlayerRoom) == "function" and getPlayerRoom()) or nil
   if at and type(centerview) == "function" then pcall(centerview, at) end
   elro.dock_title(at)
+  if dock_closed() then return end                    -- a start-up with the map closed by its X
   local wpx = (type(MudletBorders) == "table" and MudletBorders.total("right")) or 0
   say("map docked on the right (" .. wpx .. "px), frameless, sharing the column with any panes. "
     .. "'mapwin dock <width>' resizes it, 'mapwin dock' again closes it.")
@@ -409,6 +425,16 @@ end
 -- Open on a first install, afterwards only what the player left open. Type-guarded for the
 -- offline harness.
 function elro.mapwin_boot()
+  -- Mudlet's starter interface embeds the profile's one map in a panel of its own
+  if not elro._claimed and type(tempTimer) == "function" then
+    elro._claimed = true
+    tempTimer(3, function()
+      if type(MudletBorders) == "table" and MudletBorders.claim_screen
+         and MudletBorders.claim_screen("ElrohirMapper") then
+        say("Mudlet's starter interface has stepped aside for the mapper; 'baseui show' brings it back.")
+      end
+    end)
+  end
   if elro.miniBox or type(Adjustable) ~= "table" or type(getMudletHomeDir) ~= "function" then return end
   if type(io.exists) ~= "function" then return end
   local mode = get_mode()
@@ -428,12 +454,12 @@ function elro.mapwin_boot()
     local f = io.open(dir .. "/.mapwin_seen", "w")
     if f then f:write(os.date()) ; f:close() end
   end
-  elro.mapwin_dock(nil)
+  elro.mapwin_dock(nil, true)
   -- and if something hid the box after all, show it again once start-up has settled
   for _, t in ipairs({ 1, 3 }) do
     tempTimer(t, function()
       local b = elro.miniBox
-      if not (elro._mapDock and b and (b.hidden or b.auto_hidden)) then return end
+      if not (elro._mapDock and b and (b.hidden or b.auto_hidden)) or dock_closed() then return end
       quietly(function() b:show() ; b:lockContainer("full") end)
       pcall(function() b:save() end)
       dock_slot()
@@ -457,7 +483,7 @@ if elro._mapDock and type(MudletBorders) == "table" then
     undock()
     if elro.miniBox then pcall(function() elro.miniBox:hide() end) end
   else
-    pcall(function() elro.miniBox:show() ; elro.miniBox:lockContainer("full") end)
+    if not dock_closed() then pcall(function() elro.miniBox:show() ; elro.miniBox:lockContainer("full") end) end
     dock_slot()
     banner_off()
     elro.dock_title()

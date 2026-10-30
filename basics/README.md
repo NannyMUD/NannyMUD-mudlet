@@ -72,14 +72,20 @@ The panes sit in a panel beside the text, by default in two columns under the ma
 - Drag a pane by its title strip to move it: onto another pane to stack with it, near a
   pane's edge to split that space, or to an empty edge of the window to open a panel there.
 - Drag the thin bars between panes, and at a panel's inner edge, to resize them.
-- Sizes and places are remembered across restarts.
+- The X at the right end of a title strip closes that pane. Right-click any strip or bar for
+  a menu that shows closed panes again, or resets the layout.
+- Sizes, places and closed panes are remembered across restarts.
+- Newer Mudlet puts a starter interface of its own into new profiles, with a second map, chat
+  and bars. NannyBasics asks it to step aside the first time it loads; `baseui show` brings
+  it back if you prefer it.
 
 ## Commands
 
 ```
 nanny                      what has arrived, and which toggles to turn on
 nanny place <pane> <cell>  move a pane by name; 'nanny layout' lists where each one is
-nanny reset                put every pane back in its default place and size
+nanny hide / show <pane>   close a pane or bring it back (vitals, chat, score, party, guild, log)
+nanny reset                put every pane back in its default place and size, closed ones too
 nanny off / nanny on       hide the whole panel (for a second session in MultiView) / bring it back
 nanny log                  show or hide the GMCP log
 nanny hello                ask the game for the packages again

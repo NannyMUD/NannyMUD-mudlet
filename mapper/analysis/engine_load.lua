@@ -59,6 +59,13 @@ function centerview() end
 function updateMap() end
 function cecho(s) if os.getenv("VERBOSE") then io.write((tostring(s):gsub("<[^>]->", ""))) end end
 decho = cecho
+function getAllRoomUserData(id) local t = {} local r = M.rooms[id] ; for k, v in pairs(r and r.ud or {}) do t[k] = v end return t end
+function getRoomAreaName(a) for n, id in pairs(M.areas) do if id == a then return n end end return "" end
+function lockRoom(id, on) local r = M.rooms[id] ; if r then r.locked = on and true or nil end end
+function roomLocked(id) local r = M.rooms[id] ; return r and r.locked or false end
+-- the whole fake map, for a test that swaps maps the way loadMap does
+_G.harness_map = function() return M end
+_G.harness_set_map = function(m) M = m end
 function getMapUserData() return "" end
 function setMapUserData() end
 function saveMap() end

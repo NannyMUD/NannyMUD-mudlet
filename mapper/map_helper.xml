@@ -305,6 +305,27 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<regex>^mapmarks$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>mapnote</name>
+				<script>elro.cmd_note(matches[2])</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapnote(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>mapnotes</name>
+				<script>elro.cmd_notes(matches[2])</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapnotes(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>mapimport</name>
+				<script>elro.cmd_import(matches[2])</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapimport(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>mapavoids</name>
 				<script>elro.cmd_avoid()</script>
 				<command></command>

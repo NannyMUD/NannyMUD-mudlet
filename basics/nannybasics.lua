@@ -8,7 +8,7 @@
 
 NannyBasics = NannyBasics or {}
 local N = NannyBasics
-N.VERSION = "0.8.4"
+N.VERSION = "0.8.5"
 
 -- Development only: a source file on disk wins over the copy built into the package. Off
 -- unless the profile has nanny_src.txt naming it ('nanny src <path>' writes that file).
@@ -164,10 +164,35 @@ function N.relayout()
             if c.fit then pcall(c.fit, w, h) end
             if nm == "channels" then N.chat_wrap() end
           end,
+          on_hide = function() pcall(function() c.box:hide() end) end,
         })
       end
     end
   end
+end
+
+-- a pane by the name on its strip or its own: chat, score, the guild's name, ...
+function N.comp_named(word)
+  word = tostring(word or ""):lower()
+  for nm in pairs(N.comps) do
+    local t = (nm == "guild" and N.guildName) or N.TITLE[nm]
+    if word == nm or (t and word == t:lower()) then return nm end
+  end
+end
+
+-- 'nanny hide <pane>' / 'nanny show <pane>': the same as the X on its strip and the right-click menu
+function N.show_comp(word, on)
+  local nm = N.comp_named(word)
+  if not nm then say("no pane '" .. tostring(word) .. "'. Try vitals, chat, score, party, guild or log.") return end
+  if type(MudletBorders) ~= "table" or not MudletBorders.close then say("this layout cannot hide panes.") return end
+  if on then
+    if nm == "log" then N.logOn = true end
+    MudletBorders.open("nanny:" .. nm)
+  else
+    MudletBorders.close("nanny:" .. nm)
+  end
+  N.relayout()
+  say(nm .. (on and " shown" or " hidden; 'nanny show " .. word .. "' or a right-click on any strip brings it back"))
 end
 
 function N.place_comp(nm, cell)
@@ -400,6 +425,7 @@ end
 
 function N.log_toggle()
   N.logOn = not N.logOn
+  if N.logOn and type(MudletBorders) == "table" and MudletBorders.open then MudletBorders.open("nanny:log") end
   N.relayout()
   say("GMCP log " .. (N.logOn and ("shown (" .. N.place.log .. ")") or "hidden"))
 end
@@ -1757,6 +1783,9 @@ function N.cmd(arg)
     if what then N.place_comp(what, where)
     else say("usage: nanny place <vitals|channels|status|party|log> <cell>  (cells: " ..
              table.concat(type(MudletBorders) == "table" and MudletBorders.cells() or {}, ", ") .. ")") end
+  elseif verb == "hide" or verb == "show" then
+    if rest == "" then say("usage: nanny " .. verb .. " <vitals|chat|score|party|guild|log>") return end
+    N.show_comp(rest, verb == "show")
   elseif verb == "layout" then
     local parts = {}
     for _, nm in ipairs(N.order) do
@@ -1836,6 +1865,8 @@ function N.cmd(arg)
         "\n  'status' (score: XP gauge + stats) and 'group' (party: HP/SP of each member)." ..
         "\n  Drag a pane by its title strip to move it: onto a pane to stack with it, near a pane's" ..
         "\n  edge to split it, or to an empty window edge. Drag the thin bars to resize." ..
+        "\n  The X on a strip closes a pane; right-click any strip or bar to show it again." ..
+        "\n  'nanny hide <pane>' and 'nanny show <pane>' do the same by name." ..
         "\n  'nanny place <comp> <cell>' also moves a pane; 'nanny reset' restores the default." ..
         "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
         "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
@@ -1894,4 +1925,13 @@ say("NannyBasics " .. N.VERSION .. " loaded. Type 'nanny' for commands.")
 if not N._checked and type(tempTimer) == "function" then
   N._checked = true
   tempTimer(5, function() pcall(N.check_latest) end)
+end
+-- Mudlet's starter interface would draw a second map, chat and bars over ours
+if type(tempTimer) == "function" then
+  tempTimer(3, function()
+    if type(MudletBorders) == "table" and MudletBorders.claim_screen
+       and MudletBorders.claim_screen("NannyBasics") then
+      say("Mudlet's starter interface has stepped aside for NannyBasics; 'baseui show' brings it back.")
+    end
+  end)
 end

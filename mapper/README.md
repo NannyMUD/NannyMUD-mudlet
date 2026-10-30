@@ -33,8 +33,9 @@ under Toolbox → Package Manager first, then install the new one.
 
 **The map window.** The map opens docked in a panel on the right of the window, with the room
 you are in named in its title strip. Drag the bar at the panel's inner edge to make it wider or
-narrower; the size is remembered. `mapwin dock` closes the panel and opens it again, and
-`mapwin dock <width>` sets its width. With
+narrower; the size is remembered. The X on its strip closes the map; right-click any strip or
+bar, or type `mapwin dock`, to show it again. `mapwin dock` also closes the panel and gives the
+space back to the text, and `mapwin dock <width>` sets its width. With
 [NannyBasics](../basics) installed, its panes share the same
 panel: drag a pane by its title strip to move it, and the bars between panes to resize them.
 
@@ -92,7 +93,14 @@ It relayouts as you explore, in the background, without freezing the client.
 
 `mapmark bank` remembers the room you are in; from then on typing `bank` walks there. A bare
 `mapmark` remembers "here" and `mapreturn` walks back: mark, go and sell, return. Marks are
-kept in the map. Unexplored exits are drawn as short slate-blue lines rather than Mudlet's
+kept in the map.
+
+`mapnote orc guard, 2 swords` writes a note on the room you are in; a room holds as many as
+you like. Click a room on the map and its notes show in the map's corner. Right-click a room
+for "Add note" and "Notes", `mapnotes` lists every room with notes, and `mapsearch` finds rooms
+by what their notes say. Notes are kept in the map too.
+
+Unexplored exits are drawn as short slate-blue lines rather than Mudlet's
 stubs, which it repaints every frame, so a big half-explored area stays fast. `mapview` is a
 prototype second window that draws the map you are on in the style of `mapexport`, with a ring
 for you and click-to-walk.
@@ -107,6 +115,15 @@ Mudlet moves it: Settings, the Mapper tab, has **Copy map to other profile(s)**,
 map...** and **Load map...** (loading replaces the map in that profile; nothing is merged).
 Everything this package knows travels in that file. Reopen a profile after a map is loaded
 into it. `maphelp share` says the same in the client.
+
+To **join** two characters' maps instead, use `mapimport` in the profile that should receive
+the other's exploring. Bare, it lists your other profiles that have a saved map;
+`mapimport <profile>` says what it would add; `mapimport <profile> confirm` adds it. Rooms,
+exits, recorded exits, marks, notes and avoided rooms this map lacks come over. Where the two
+maps disagree, this one's is kept. Your map is saved first, and `mapimport undo` puts it back
+(in the same session, and anything explored since the import is lost). If the other map draws
+an area into another one, the import says so by name; `mapunmerge` reverses it. Close the
+other profile before importing, so its latest exploring is in its saved map.
 
 ## Using it with another MUD
 

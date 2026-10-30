@@ -1,7 +1,16 @@
 -- Offline test of the layout coordinator (border.lua): title strips, dragging a pane to split a
 -- cell / join a stack / open an empty edge, pruning, reset, and set_title. Mudlet is stubbed.
 --   luajit basics/tests/test_border.lua
-local function L() local t={} ; local mt={__index=function() return function() return t end end} ; return setmetatable(t,mt) end
+-- a stub label that keeps its click callback and text, so the test can click it
+local function L()
+  local t = {}
+  local mt = { __index = function(_, k)
+    if k == "setClickCallback" then return function(self, f) self._click = f return self end end
+    if k == "echo" then return function(self, s) self._echoed = s return self end end
+    return function() return t end
+  end }
+  return setmetatable(t, mt)
+end
 Geyser = { Label = { new = function() return L() end } }
 local W, H = 2560, 1143
 function getMainWindowSize() return W, H end
@@ -206,5 +215,62 @@ BORD.left = BORD.left - 4 ; B.apply()             -- the preference lowered mid-
 check(B.margin.left == 6, "a change in the preferences mid-session moves the margin (" .. B.margin.left .. ")")
 B.move("nanny:party", "c1")
 check(BORD.left == 6, "left panel closed: the border is the margin again (" .. BORD.left .. ")")
+
+-- 15. the X closes a pane and it stays closed across a restart; the right-click menu and a
+-- reset bring it back; a left click on a strip still drags
+local hidden = 0
+local function chat() return { cell="c2", cross=0.45, title="Chat", cb=cb, order=12,
+                               on_hide=function() hidden = hidden + 1 end } end
+B.slot("nanny:channels", chat())
+check(B.hmeta["close:nanny:channels"] ~= nil, "a pane with on_hide has an X")
+check(B.hmeta["close:nanny:status"] == nil, "a pane without one has none")
+B.handles["close:nanny:channels"]._click({ button = "LeftButton" })
+check(B.is_closed("nanny:channels") and B.where("nanny:channels") == nil and hidden > 0, "the X closed Chat")
+check(B.total("right") > 0 and B.where("nanny:status") ~= nil, "the rest of the panel stays")
+check(B.byId["nanny:channels"] == nil, "a closed pane is not laid out")
+MudletBorders = nil ; dofile(HERE .. "border.lua") ; B = MudletBorders
+B.slot("elromap:map",   { cell="map", cross=0.5, title="Map", cb=cb })
+B.slot("nanny:vitals",  { cell="bottom", cross=56, cb=cb, order=11 })
+B.slot("nanny:status",  { cell="c1", cross=0.45, hint=180, title="Score", cb=cb, order=13 })
+B.slot("nanny:party",   { cell="c1", cross=0.45, title="Party", cb=cb, order=14 })
+hidden = 0
+B.slot("nanny:channels", chat())
+check(B.is_closed("nanny:channels") and B.where("nanny:channels") == nil and hidden > 0,
+  "Chat is still closed after a restart, and its owner was told to hide it")
+MX, MY = 100, 100
+B.handles["title:nanny:status"]._click({ button = "RightButton" })
+check(B.menuL[1]._echoed == "Show Chat" and B.menuL[2]._echoed == "Reset layout",
+  "right-click on Score: Show Chat, Reset layout (" .. tostring(B.menuL[1]._echoed) .. ")")
+B.menuL[1]._click()
+check(not B.is_closed("nanny:channels") and B.where("nanny:channels") == "c2", "Show Chat put it back in c2")
+B.handles["title:nanny:channels"]._click({ button = "RightButton" })
+check(B.menuL[1]._echoed == "Hide Chat", "right-click on Chat offers to hide it")
+B.menuL[1]._click()
+check(B.is_closed("nanny:channels"), "Hide Chat closed it")
+B.reset()
+check(not B.is_closed("nanny:channels") and B.where("nanny:channels") == "c2", "a reset shows closed panes again")
+local p2 = B.byId["nanny:party"] ; MX, MY = p2.x + 10, p2.y + 5
+B.handles["title:nanny:party"]._click({ button = "LeftButton" })
+check(B._drag ~= nil and B._drag.kind == "pane", "a left click on a strip still starts a drag")
+B.drag_end()
+
+-- 16. Mudlet's starter interface is asked to stand aside once per package, never when it is
+-- already hidden, and not again after a restart (so 'baseui show' sticks)
+local raised = {}
+function raiseEvent(ev, arg) raised[#raised + 1] = ev .. ":" .. tostring(arg) end
+check(not B.claim_screen("NannyBasics") and #raised == 0, "no starter interface, nothing asked")
+local dormant = false
+BaseUI = { dormant = function() return dormant end }
+check(B.claim_screen("NannyBasics") and raised[#raised] == "sysServerGuiInstalled:NannyBasics",
+  "asked it to stand aside for NannyBasics (" .. tostring(raised[#raised]) .. ")")
+local n = #raised
+check(not B.claim_screen("NannyBasics") and #raised == n, "not asked twice")
+dormant = true
+check(not B.claim_screen("ElrohirMapper") and #raised == n, "not asked when it is already hidden")
+dormant = false
+MudletBorders = nil ; dofile(HERE .. "border.lua") ; B = MudletBorders
+check(not B.claim_screen("NannyBasics") and not B.claim_screen("ElrohirMapper") and #raised == n,
+  "after a restart neither package asks again, so 'baseui show' sticks")
+BaseUI = nil ; raiseEvent = nil
 
 print(fails == 0 and "ALL PASS" or (fails .. " FAILED"))

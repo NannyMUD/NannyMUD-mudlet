@@ -23,6 +23,9 @@ gets told where to draw it.
 - Sizes and places are saved in the profile (`MudletBorders.lua`) and come back after a
   restart. Left and right panels never take more than the window minus a minimum for the text
   (25%); the same goes for top and bottom.
+- A pane whose owner passes `on_hide` gets an X on its strip. A closed pane stays closed,
+  across restarts, until the player shows it again from the right-click menu on any strip or
+  bar, or a reset.
 - A border width the player sets in Mudlet's own preferences is kept as a margin on that
   edge, outside any panel. Mudlet saves borders with the profile, so `border.lua` saves the
   last values it set too; on load, a border that differs from that was changed by the player.
@@ -47,8 +50,12 @@ MudletBorders.slot("mypkg:notes", {
   cb = function(x, y, w, h)
     box:show() ; box:move(x, y) ; box:resize(w, h)
   end,
+  on_hide = function() box:hide() end,   -- optional: gives the strip an X
 })
 ```
+
+With `on_hide` the player can close the pane. The layout then calls `on_hide` instead of `cb`
+until the pane is shown again, and `cb` must show the box, as above, for that to work.
 
 `cb` is called on every layout pass (window resize, drag, another package's pane appearing),
 with the rectangle below the title strip, in the same coordinates as `getMainWindowSize()`.
@@ -65,7 +72,10 @@ All on the global `MudletBorders`.
 
 | Call | What it does |
 |---|---|
-| `slot(id, spec)` | Add a pane, or update an existing one's spec (`cell`, `cross`, `hint`, `order`, `title`, `cb`). A pane that was parked comes back where it was. |
+| `slot(id, spec)` | Add a pane, or update an existing one's spec (`cell`, `cross`, `hint`, `order`, `title`, `cb`, `on_hide`). A pane that was parked comes back where it was; one the player closed stays closed. |
+| `close(id)` / `open(id)` | Close a pane as its X does, or show it again where it was. Saved per profile. |
+| `is_closed(id)` | Whether the player has that pane closed. |
+| `claim_screen(pkg)` | Ask Mudlet's starter interface (`mudlet-base-ui`) to stand aside, as it does for a game's own interface. Once per package and profile, so a player's `baseui show` sticks; true when it asked. |
 | `park(id)` | Hide a pane but remember its place; `slot` brings it back there. |
 | `remove(id)` | Take a pane out of the layout altogether (for example when your package is uninstalled). |
 | `move(id, cell)` | Put a pane in another cell, as a drag would. |
@@ -78,12 +88,12 @@ All on the global `MudletBorders`.
 | `set_hint(id, hint)` | Change a pane's fixed size, for content that grew. |
 | `clear_width(edge)` | Forget a dragged panel width, so the panes' own `cross` applies again. |
 | `is_dragging()` | True while the player is dragging something. Skip expensive work in `cb` then; a final pass follows the drop. |
-| `reset()` | The default layout again: default tree, no dragged sizes, every pane in its own `cell`. |
+| `reset()` | The default layout again: default tree, no dragged sizes, closed panes shown, every pane in its own `cell`. |
 | `suspend()` / `resume()` | Hand every border back to the text and hide all panes (for a second session in MultiView), or bring them back. Saved per profile. |
 | `is_suspended()` | Whether that is in force. |
 
-The event `MudletBordersChanged` is raised after a player drops a pane somewhere and after
-`reset()`. Listen for it when a pane should change its own size or content with its new place
+The event `MudletBordersChanged` is raised after a player drops a pane somewhere, closes or
+shows one, and after `reset()`. Listen for it when a pane should change its own size or content with its new place
 (NannyBasics uses it to give a pane the right `cross` for the edge it landed on).
 
 ## Shipping it

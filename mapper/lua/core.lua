@@ -10,7 +10,7 @@ elro.dirty = elro.dirty or {}     -- areaID -> true: needs relayout
 elro.ns_cap = elro.ns_cap or 5000  -- max rooms for the O(V^2 E) NS engine; above -> flood
 -- Shown at load. Kept in step with config.lua's `version` by tools/build-package.sh,
 -- which refuses to build if the two differ.
-elro.VERSION = "0.8.4"
+elro.VERSION = "0.8.5"
 
 elro.relayout_timer = elro.relayout_timer or nil
 -- min internally-connected cluster size for a server-area to keep its own tab;
@@ -5835,6 +5835,143 @@ function elro.cmd_marks()
   if #rows == 0 then cecho("  (none -- 'mapmark' marks the room you are in, 'mapmark shop' names one)\n") end
 end
 
+-- mapnote: lines of the player's own text on a room (who and what is there), in the room's
+-- user data like a mark, so they live in the map. Shown in the map's info overlay for the
+-- clicked room, and listed by mapnote, mapnotes and mapsearch.
+local NOTE = "note"
+local function note_lines(id)
+  local t = {}
+  local s = roomExists(id) and getRoomUserData(id, NOTE) or ""
+  for l in s:gmatch("[^\n]+") do t[#t + 1] = l end
+  return t
+end
+elro.note_lines = note_lines
+local function note_set(id, t)
+  setRoomUserData(id, NOTE, table.concat(t, "\n"))
+  if type(saveMap) == "function" then pcall(saveMap) end
+  if type(updateMap) == "function" then pcall(updateMap) end
+end
+-- the player's text goes out through echo: cecho would take "<sword>" for a colour
+local function note_echo(i, line)
+  cecho(string.format("<yellow>  %d<reset>  ", i)) ; echo(line .. "\n")
+end
+local function note_show(id)
+  local t = note_lines(id)
+  local where = string.format("%s (%d)", getRoomName(id) or "?", id)
+  if #t == 0 then
+    cecho("\n<yellow>[elro]: no notes on " .. where .. ". 'mapnote <text>' adds one.\n<reset>") return
+  end
+  cecho("\n<cyan>[elro] notes on " .. where .. ":<reset>\n")
+  for i, l in ipairs(t) do note_echo(i, l) end
+  cecho("<grey>  'mapnote del <n>' removes one, 'mapnote clear' all of them.<reset>\n")
+end
+elro.note_show = note_show
+
+-- mapnote [#id] [text | del <n> | clear]. A ';' stays in the note; only the profile's own
+-- separator ends it (see with_rest).
+function elro.cmd_note(arg)
+  arg = arg or ""
+  local sep = type(getCommandSeparator) == "function" and getCommandSeparator() or nil
+  local rest
+  if sep and sep ~= "" then
+    local i, j = arg:find(sep, 1, true)
+    if i then rest, arg = arg:sub(j + 1), arg:sub(1, i - 1) end
+  end
+  arg = arg:gsub("^%s+", ""):gsub("%s+$", "")
+  local hid, after = arg:match("^#(%d+)%s*(.*)$")
+  local id = hid and tonumber(hid) or elro.current
+  if hid then arg = after end
+  if hid and not roomExists(id) then
+    cecho("\n<red>[elro]: no room " .. hid .. ". 'mapsearch <text>' finds ids.\n<reset>")
+  elseif not hid and (not id or not roomExists(id) or elro.offmap) then
+    cecho("\n<red>[elro]: current room unknown or off the map; walk to a mapped room, or 'mapnote #<id> ...'.\n<reset>")
+  else
+    local t = note_lines(id)
+    local n = tonumber(arg:match("^del%s+(%d+)$"))
+    if arg == "" then
+      note_show(id)
+    elseif arg == "clear" then
+      note_set(id, {})
+      cecho(string.format("\n<green>[elro]: notes on %d cleared.\n<reset>", id))
+    elseif n then
+      if not t[n] then cecho(string.format("\n<red>[elro]: room %d has no note %d.\n<reset>", id, n))
+      else
+        table.remove(t, n) ; note_set(id, t)
+        cecho(string.format("\n<green>[elro]: note %d removed from %d (%d left).\n<reset>", n, id, #t))
+      end
+    else
+      t[#t + 1] = arg ; note_set(id, t)
+      cecho(string.format("\n<green>[elro]: noted on %s (%d), %d note(s). Click the room on the map to see them.\n<reset>",
+            getRoomName(id) or "?", id, #t))
+    end
+  end
+  if rest and rest:match("%S") and type(expandAlias) == "function" then expandAlias(rest, false) end
+end
+
+-- mapnotes [text]: every room with notes, or those whose notes contain the text (any case)
+function elro.cmd_notes(pat)
+  pat = (pat or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local lpat = pat:lower()
+  local rows = {}
+  for id in pairs(elro.cs_all_rooms()) do
+    local hits = {}
+    for i, l in ipairs(note_lines(id)) do
+      if lpat == "" or l:lower():find(lpat, 1, true) then hits[#hits + 1] = { i, l } end
+    end
+    if #hits > 0 then rows[#rows + 1] = { id, hits } end
+  end
+  table.sort(rows, function(a, b) return a[1] < b[1] end)
+  if #rows == 0 then
+    cecho(pat == "" and "\n<yellow>[elro]: no notes yet. 'mapnote <text>' adds one to the room you are in.\n<reset>"
+          or "\n<yellow>[elro]: no notes containing '" .. pat .. "'.\n<reset>")
+    return
+  end
+  cecho(string.format("\n<cyan>[elro] %d room(s) with notes%s:<reset>\n", #rows,
+        pat == "" and "" or (" containing '" .. pat .. "'")))
+  for _, r in ipairs(rows) do
+    cecho(string.format("<yellow>%d<reset>  %s\n", r[1], getRoomName(r[1]) or "?"))
+    for _, h in ipairs(r[2]) do note_echo(h[1], h[2]) end
+  end
+  cecho("<grey>  'mapgoto <id>' walks there.<reset>\n")
+end
+
+-- the map's right-click menu: add a note to the selected room through the command line, or list
+-- its notes. Re-registered on every load, like the entries above.
+if type(addMapEvent) == "function" and type(registerAnonymousEventHandler) == "function" then
+  local function one_room()
+    local ids = elro.sel_rooms()
+    if not ids then return nil end
+    if #ids ~= 1 then cecho("\n<yellow>[elro]: select exactly one room.\n<reset>") return nil end
+    return ids[1]
+  end
+  pcall(addMapEvent, "elro_note_add", "elroMapNoteAdd", "", "Add note (mapper)")
+  pcall(addMapEvent, "elro_note_show", "elroMapNoteShow", "", "Notes (mapper)")
+  if elro._mapNoteAddH then pcall(killAnonymousEventHandler, elro._mapNoteAddH) end
+  if elro._mapNoteShowH then pcall(killAnonymousEventHandler, elro._mapNoteShowH) end
+  elro._mapNoteAddH = registerAnonymousEventHandler("elroMapNoteAdd", function()
+    local id = one_room()
+    if id and type(printCmdLine) == "function" then printCmdLine("mapnote #" .. id .. " ") end
+  end)
+  elro._mapNoteShowH = registerAnonymousEventHandler("elroMapNoteShow", function()
+    local id = one_room()
+    if id then note_show(id) end
+  end)
+end
+
+-- The map's info overlay names the notes of the clicked room (or the player's own). Mudlet has
+-- no hover for rooms; a click selects one.
+local NOTE_INFO = "Notes"
+if type(registerMapInfo) == "function" then
+  pcall(registerMapInfo, NOTE_INFO, function(room)
+    local t = room and note_lines(room) or {}
+    if #t == 0 then return "" end
+    local s = "Notes: " .. table.concat(t, " \194\183 ")      -- a middle dot; the overlay is plain text
+    if #s > 240 then s = s:sub(1, 237) .. "..." end
+    return s, false, false, 230, 210, 140
+  end)
+  if type(enableMapInfo) == "function" then pcall(enableMapInfo, NOTE_INFO) end
+end
+
 -- list outgoing and incoming edges for a room (default: current room)
 function elro.list_edges(id)
   id = id or elro.current
@@ -5997,12 +6134,15 @@ local HELP_BASIC = {
   { "mapview [fit|plain|reset|zoom <px>]", "a prototype: the map you are on drawn in the style of mapexport, in a second window. A red ring marks you; click a room to walk there; the wheel zooms, 'fit' shows the whole map. Mudlet's map stays where it is" },
   { "mapexport [area] [a4] [plain]", "write one map as a picture (an SVG any browser opens): white, pale terrain tints, every room numbered and listed, as big as the map needs. Bare = the map you are on. 'a4' fits it on one sheet to print instead; 'plain' leaves the tints out. A picture, not a copy of your map" },
   { "maphelp share",      "how to copy your map to another profile, back it up, or give it to someone" },
+  { "mapimport [profile] [confirm]", "join another profile's map into this one: rooms, exits, marks and notes it has that this one lacks. Bare = list the profiles; with a name = what it would add; 'confirm' does it. This map is saved first, and where the two disagree this one is kept. 'mapimport undo' puts back the map from before (this session only)" },
   { "mapgoto <id|area>", "speedwalk to a room id, or the nearest room of a named area (substring ok). Double-clicking a room on the map walks there too, as does 'Walk here' in its right-click menu" },
   { "mapnear [terrain]",  "walk to the nearest room of a terrain (heal, shop, port...); bare = list the names you can search for" },
   { "mapmark [name]",     "remember the room you are in under a name: from then on typing that name walks there ('mapmark bank', later 'bank'). Bare = 'here', walked back to with 'mapreturn': mark, go and sell, return. Marks are kept in the map. 'mapmarks' lists them, 'mapunmark <name>' forgets one and gives the word back" },
   { "mapavoid [id,...|sel]", "keep speedwalks out of a room (bare = the one you are in): a death trap, an aggressive monster. The same as 'Lock' in the map's right-click menu" },
   { "mapunavoid [id,...|sel]", "let speedwalks use it again   (mapavoids = list them)" },
-  { "mapsearch <text>",  "find rooms whose name, or whose area's name, contains the text (any case); lists them with the ids 'mapgoto' takes" },
+  { "mapsearch <text>",  "find rooms whose name, area's name or notes contain the text (any case); lists them with the ids 'mapgoto' takes" },
+  { "mapnote [text]",    "add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); bare = list them. 'mapnote del <n>' / 'mapnote clear' remove; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner" },
+  { "mapnotes [text]",   "every room with notes, or only those whose notes contain the text" },
   { "mapprompts [on|off]", "when one action sends several commands at once (a speedwalk, an alias, a key), show only the last prompt. On by default" },
 
   { "FIXING THE MAP -- changes rooms, exits or areas" },
@@ -6093,12 +6233,14 @@ local HELP_SHARE = {
     .. "another player.",
   "FROM A FILE|Settings, the Mapper tab, 'Load map...'. This REPLACES the map in that profile; "
     .. "the two are not merged. Save your own first if you may want it back.",
+  "JOINING TWO MAPS|'mapimport <profile>' adds what another profile's map has and this one "
+    .. "lacks, and keeps this one's where they disagree. Bare 'mapimport' lists the profiles.",
   "",
   "After a map is loaded or copied into a profile that is open, close and reopen that profile "
     .. "so the mapper reads the new map from the start.",
   "",
   "The file carries everything: rooms, exits, the special exits you recorded, terrain, merges, "
-    .. "folds and the rooms speedwalks keep out of. Only the map window's size and corner "
+    .. "folds, your marks and room notes, and the rooms speedwalks keep out of. Only the map window's size and corner "
     .. "belong to the profile. The receiving profile needs this package too, and 'toggle gmcp' "
     .. "and 'toggle gmcp room' in the game to keep mapping.",
   "",
@@ -6266,12 +6408,17 @@ function elro.search_rooms(pat)
   end
   local lpat = pat:lower()
   local nm = elro.cs_areas_swap()
-  local results = {}
+  local results, noted = {}, {}
   for id in pairs(elro.cs_all_rooms()) do
     local rname = (getRoomName(id) or ""):lower()
     local aname = (nm[getRoomArea(id)] or ""):lower()
-    if rname:find(lpat, 1, true) or aname:find(lpat, 1, true) then
+    local hits = {}
+    for i, l in ipairs(elro.note_lines(id)) do
+      if l:lower():find(lpat, 1, true) then hits[#hits + 1] = { i, l } end
+    end
+    if rname:find(lpat, 1, true) or aname:find(lpat, 1, true) or #hits > 0 then
       results[#results + 1] = id
+      noted[id] = hits
     end
   end
   table.sort(results)
@@ -6284,6 +6431,7 @@ function elro.search_rooms(pat)
     local aname = nm[getRoomArea(id)] or "?"
     cecho(string.format("<yellow>  %d<reset>  %-40s  area=%-15s  (%d,%d,%d)\n",
           id, getRoomName(id) or "?", aname, x, y, z))
+    for _, h in ipairs(noted[id]) do cecho("      <grey>note<reset> ") ; echo(h[2] .. "\n") end
   end
 end
 
