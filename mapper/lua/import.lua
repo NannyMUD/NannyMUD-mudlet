@@ -48,12 +48,12 @@ function elro.import_sources()
   return out
 end
 
--- Everything the merge reads, from the map loaded now. Placeholders and maze vertices are
--- not rooms anyone walked.
+-- Everything the merge reads, from the map loaded now. Coin maze rooms, placeholders and
+-- maze vertices are not rooms the game numbered; all sit at or above COIN_BASE.
 function elro.import_snapshot()
   local snap = { rooms = {}, mud = {} }
   for id in pairs(getRooms() or {}) do
-    if id ~= elro.FRONTIER_ROOM and id ~= elro.OFF_ROOM and id < elro.MAZE_VBASE then
+    if id < elro.COIN_BASE then
       local x, y, z = getRoomCoordinates(id)
       snap.rooms[id] = {
         name = getRoomName(id), area = getRoomAreaName(getRoomArea(id)) or "",

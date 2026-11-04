@@ -319,6 +319,13 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<regex>^mapnotes(?:\s+(.+))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>mapcoins</name>
+				<script>elro.cmd_coins(matches[2])</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapcoins(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>mapimport</name>
 				<script>elro.cmd_import(matches[2])</script>
 				<command></command>

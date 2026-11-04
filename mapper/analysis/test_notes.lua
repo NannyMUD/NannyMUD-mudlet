@@ -74,6 +74,12 @@ eq(echoed[1], "statue of a cat\n", "...the line itself")
 echoed = {}
 elro.cmd_notes()
 eq(#echoed, 4, "bare mapnotes lists every note")
+setRoomUserData(1, "sarea", "zed") ; setRoomUserData(3, "sarea", "abby")
+said = {}
+elro.cmd_notes()
+local out = table.concat(said)
+eq(out:find("(abby)", 1, true) ~= nil and out:find("(zed)", 1, true) ~= nil, true, "mapnotes names each room's area")
+eq(out:find("(abby)", 1, true) < out:find("(zed)", 1, true), true, "...sorted by area, not by id")
 
 echoed = {}
 elro.search_rooms("statue")

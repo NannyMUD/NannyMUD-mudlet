@@ -684,6 +684,27 @@ server, so the same room has the same id in both maps and no matching is guessed
 come along only as a seed; new rooms are laid out like fresh exploring. Area merges and hint
 choices are taken only for areas this map says nothing about, and display settings never.
 
+`mapcoins` (2026-11-02) is the old way through a maze of identical rooms: a different number
+of coins in each. It works from the text, not the map data, because a blocked maze sends
+none. Every command sent, its own drops included, queues for its one prompt, so output is
+credited to the right command however fast the player types; with a single "current move",
+a drop's prompt closed the move typed behind it and every later link came from a stale room.
+Coins are dropped only when a move showed a room of the maze's name (so not after a wall,
+nor once out of the maze) and nothing else is in flight, since a drop sent behind a second
+move would land in the wrong room. The newest answer for a direction wins and the old one is
+kept beside it: a maze whose exits change has to be told apart from a wrong record. A wall is
+only the game's own wall message. Goal rooms can differ from the maze's name by a single mark,
+so any other answer is kept as what it showed and the position becomes unknown: calling it a
+wall hid the way to the end of a maze as "no move". What it learns stays in the session: coins get picked up and monsters wander off with
+them, so the numbering goes stale between visits anyway. Its rooms are drawn on Mudlet's map
+as `COIN_BASE` + coins, in an area of their own placed step by step from the walk: a maze is
+not meant to close, and the layout engine would straighten what should show as a tangle, so
+relayout skips that area and an import never takes it. Mudlet saves the whole map, so the
+rooms carry a `coinmaze` key and are deleted at profile start. A blocked maze names no exits,
+so "untested" can only mean the four compass points plus any direction that has moved someone
+in this maze; an offered direction may be no exit at all until it is tried. The stubs are
+Mudlet's own, not the frontier lines, because those are drawn by the relayout this area skips.
+
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the
 server said. The walk remembers the rooms its path passes (`walk_steps`) so

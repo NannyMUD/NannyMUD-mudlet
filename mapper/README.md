@@ -97,8 +97,17 @@ kept in the map.
 
 `mapnote orc guard, 2 swords` writes a note on the room you are in; a room holds as many as
 you like. Click a room on the map and its notes show in the map's corner. Right-click a room
-for "Add note" and "Notes", `mapnotes` lists every room with notes, and `mapsearch` finds rooms
-by what their notes say. Notes are kept in the map too.
+for "Add note" and "Notes", `mapnotes` lists every room with notes, area by area, and
+`mapnotes rabbit` only the rooms whose notes mention a rabbit. `mapsearch` also finds rooms by what
+their notes say. Notes are kept in the map too.
+
+In a maze where every room looks the same, `mapcoins on` drops a different number of gold
+coins in each empty room you walk into, so each room is known by its coins, and draws them on
+a map of their own as you go, with a stub on each direction not yet tried. `mapcoins` lists
+the rooms numbered so far: which way leads where, which come back to the same room, which did
+not move you, which showed something else (a room of another name is often the way on) and
+which are untested. `mapcoins off` stops dropping, `mapcoins reset` wipes that map. It is gone again at
+the next start.
 
 Unexplored exits are drawn as short slate-blue lines rather than Mudlet's
 stubs, which it repaints every frame, so a big half-explored area stays fast. `mapview` is a

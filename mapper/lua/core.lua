@@ -1925,6 +1925,9 @@ end
 -- each step off it. The id sits below MAZE_VBASE and above any real room.
 elro.OFF_ROOM = 899999
 elro.OFF_AREA = "off the map"
+-- mapcoins' rooms: COIN_BASE + the room's coins, in an area of their own (coinmaze.lua)
+elro.COIN_BASE = 890000
+elro.COIN_AREA = "coin maze"
 -- Two rows, one label each (a label is a single line). A label's position is its
 -- top-left corner, and at zoom 30 / 12pt a character is about 0.23 map units
 -- wide, so x = -chars * 0.115 centres a row over the room at (0,0). Bump the
@@ -2008,8 +2011,11 @@ function elro.frontier_room()
   return id
 end
 
--- The room the VIEW follows: the placeholder while off the map, else the player's.
+-- The room the VIEW follows: a coin maze room while in one, the placeholder while off the
+-- map, else the player's.
 function elro.view_room()
+  local coin = elro.coins and elro.coins.view
+  if coin and roomExists(coin) then return coin end
   if elro.offmap then return elro.off_room() end
   return elro.current
 end
@@ -2411,7 +2417,9 @@ local function relayout_todo(all)
   end
   local cur = elro.current and roomExists(elro.current) and getRoomArea(elro.current) or nil
   local order = {}
-  for aid in pairs(set) do if aid ~= w2 then order[#order + 1] = aid end end
+  -- the coin maze places its own rooms (coinmaze.lua)
+  local coin = elro.COIN_AREA and elro.cs_areas()[elro.COIN_AREA]
+  for aid in pairs(set) do if aid ~= w2 and aid ~= coin then order[#order + 1] = aid end end
   table.sort(order, function(a, b)
     if (a == cur) ~= (b == cur) then return a == cur end
     return a < b
@@ -5918,9 +5926,13 @@ function elro.cmd_notes(pat)
     for i, l in ipairs(note_lines(id)) do
       if lpat == "" or l:lower():find(lpat, 1, true) then hits[#hits + 1] = { i, l } end
     end
-    if #hits > 0 then rows[#rows + 1] = { id, hits } end
+    if #hits > 0 then rows[#rows + 1] = { id, hits, getRoomUserData(id, "sarea") or "" } end
   end
-  table.sort(rows, function(a, b) return a[1] < b[1] end)
+  -- by area, so the same thing noted in several areas reads as a list of areas
+  table.sort(rows, function(a, b)
+    if a[3] ~= b[3] then return a[3] < b[3] end
+    return a[1] < b[1]
+  end)
   if #rows == 0 then
     cecho(pat == "" and "\n<yellow>[elro]: no notes yet. 'mapnote <text>' adds one to the room you are in.\n<reset>"
           or "\n<yellow>[elro]: no notes containing '" .. pat .. "'.\n<reset>")
@@ -5929,7 +5941,8 @@ function elro.cmd_notes(pat)
   cecho(string.format("\n<cyan>[elro] %d room(s) with notes%s:<reset>\n", #rows,
         pat == "" and "" or (" containing '" .. pat .. "'")))
   for _, r in ipairs(rows) do
-    cecho(string.format("<yellow>%d<reset>  %s\n", r[1], getRoomName(r[1]) or "?"))
+    cecho(string.format("<yellow>%d<reset>  %s", r[1], getRoomName(r[1]) or "?"))
+    cecho(r[3] ~= "" and ("  <grey>(" .. r[3] .. ")<reset>\n") or "\n")
     for _, h in ipairs(r[2]) do note_echo(h[1], h[2]) end
   end
   cecho("<grey>  'mapgoto <id>' walks there.<reset>\n")
@@ -6142,7 +6155,8 @@ local HELP_BASIC = {
   { "mapunavoid [id,...|sel]", "let speedwalks use it again   (mapavoids = list them)" },
   { "mapsearch <text>",  "find rooms whose name, area's name or notes contain the text (any case); lists them with the ids 'mapgoto' takes" },
   { "mapnote [text]",    "add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); bare = list them. 'mapnote del <n>' / 'mapnote clear' remove; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner" },
-  { "mapnotes [text]",   "every room with notes, or only those whose notes contain the text" },
+  { "mapnotes [text]",   "every room with notes, or only those whose notes contain the text; by area" },
+  { "mapcoins [on|off|reset]", "for a maze whose rooms all look alike: after each move into a room with no gold, drop a number of coins no other room has ('drop 1', 'drop 2'...), so every room is known by its coins. Switch it on inside the maze; 'on <room name>' if it cannot read the name. The rooms are drawn on a map of their own, 'coin maze', as you walk. A stub on the map marks a direction not yet tried. Bare = the rooms numbered so far: where each way leads, which come back to the same room, which did not move you, and which are untested; 'reset' wipes them and starts again at 1. Kept for this session only" },
   { "mapprompts [on|off]", "when one action sends several commands at once (a speedwalk, an alias, a key), show only the last prompt. On by default" },
 
   { "FIXING THE MAP -- changes rooms, exits or areas" },
