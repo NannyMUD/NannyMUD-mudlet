@@ -701,9 +701,28 @@ as `COIN_BASE` + coins, in an area of their own placed step by step from the wal
 not meant to close, and the layout engine would straighten what should show as a tangle, so
 relayout skips that area and an import never takes it. Mudlet saves the whole map, so the
 rooms carry a `coinmaze` key and are deleted at profile start. A blocked maze names no exits,
-so "untested" can only mean the four compass points plus any direction that has moved someone
-in this maze; an offered direction may be no exit at all until it is tried. The stubs are
-Mudlet's own, not the frontier lines, because those are drawn by the relayout this area skips.
+so "untested" can only mean the four compass points plus any direction that has taken someone
+from one maze room to another. A wall or a way out never adds one, and up and down are only
+shown where walked: offering them everywhere put a mark on every room after a single stray
+`ne`. Untested ways are exits to the frontier placeholder drawn as its short line, written by
+the mode itself since relayout skips the area, because Mudlet's stubs reach half a cell and
+two neighbours' stubs meet. A maze's north rarely leads to the room drawn north, so each walked
+way is a custom line that leaves its room in its own direction; two rooms joined both ways
+are one grey line. `mapcoins layout` lets the engine lay the area out once, on request: right
+for a maze whose ways stay put, wrong for one that reshuffles.
+
+Some caves move only forward, right, back and left. The client keeps a facing, starting as
+north when the mode is switched on, turns each relative move into a compass direction, and
+afterwards faces the way it went; a passage described as curving turns it further (inferred
+from one tunnel described from both ends). The room's own words name what lies in front, right
+and left; a side named as wall or not named is a wall, behind is never told. A typed compass
+word there is refused by the game, so it is no move at all. A room seen before corrects a
+wrong facing, but only when its words CONTRADICT the kept facing: a corridor reads the same
+from both ends and behind is never described, so taking a mere better fit as proof turned the
+player round in every corridor and scrambled ten rooms in one live session. `relearn` forgets
+the ways and keeps the numbers, since the coins are still lying there. `go` walks one step per
+prompt, each chosen on arrival, so a way that turned out different cannot carry the rest of a
+burst into the wrong rooms.
 
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the

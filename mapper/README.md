@@ -109,6 +109,14 @@ not move you, which showed something else (a room of another name is often the w
 which are untested. `mapcoins off` stops dropping, `mapcoins reset` wipes that map. It is gone again at
 the next start.
 
+`mapcoins go` walks you to the nearest room with an untested way, `mapcoins go 12` to room 12;
+typing anything stops it. `mapcoins twoway` takes every way you walk to lead back the way you
+came, for a maze that keeps to that. `mapcoins layout` tidies the coin map with the mapper's
+engine once, and `mapcoins relearn` forgets every way but keeps the numbers. In a cave where
+you can only go forward, right, back and left, the mode keeps track of which way you face and
+reads what the room says lies in front of you and to each side; after each move it prints
+what is untested in those same words.
+
 Unexplored exits are drawn as short slate-blue lines rather than Mudlet's
 stubs, which it repaints every frame, so a big half-explored area stays fast. `mapview` is a
 prototype second window that draws the map you are on in the style of `mapexport`, with a ring

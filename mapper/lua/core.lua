@@ -2417,8 +2417,9 @@ local function relayout_todo(all)
   end
   local cur = elro.current and roomExists(elro.current) and getRoomArea(elro.current) or nil
   local order = {}
-  -- the coin maze places its own rooms (coinmaze.lua)
+  -- the coin maze places its own rooms (coinmaze.lua), unless 'mapcoins layout' asked for one run
   local coin = elro.COIN_AREA and elro.cs_areas()[elro.COIN_AREA]
+  if coin and elro.coins and elro.coins.layoutOnce then elro.coins.layoutOnce = nil ; coin = nil end
   for aid in pairs(set) do if aid ~= w2 and aid ~= coin then order[#order + 1] = aid end end
   table.sort(order, function(a, b)
     if (a == cur) ~= (b == cur) then return a == cur end
@@ -6156,7 +6157,7 @@ local HELP_BASIC = {
   { "mapsearch <text>",  "find rooms whose name, area's name or notes contain the text (any case); lists them with the ids 'mapgoto' takes" },
   { "mapnote [text]",    "add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); bare = list them. 'mapnote del <n>' / 'mapnote clear' remove; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner" },
   { "mapnotes [text]",   "every room with notes, or only those whose notes contain the text; by area" },
-  { "mapcoins [on|off|reset]", "for a maze whose rooms all look alike: after each move into a room with no gold, drop a number of coins no other room has ('drop 1', 'drop 2'...), so every room is known by its coins. Switch it on inside the maze; 'on <room name>' if it cannot read the name. The rooms are drawn on a map of their own, 'coin maze', as you walk. A stub on the map marks a direction not yet tried. Bare = the rooms numbered so far: where each way leads, which come back to the same room, which did not move you, and which are untested; 'reset' wipes them and starts again at 1. Kept for this session only" },
+  { "mapcoins [on|off|reset|relearn|twoway|go [n]|layout]", "for a maze whose rooms all look alike: after each move into a room with no gold, drop a number of coins no other room has ('drop 1', 'drop 2'...), so every room is known by its coins. Switch it on inside the maze; 'on <room name>' if it cannot read the name. The rooms are drawn on a map of their own, 'coin maze', as you walk. A stub on the map marks a direction not yet tried. Bare = the rooms numbered so far: where each way leads, which come back to the same room, which did not move you, and which are untested; 'reset' wipes them and starts again at 1. 'twoway' takes every way walked to lead back the way you came, for a maze that keeps to that. 'go' walks to the nearest room with an untested way, 'go <n>' to room n, a step at a time; typing anything stops it. 'layout' has the mapper's engine lay the coin map out once, for a maze whose ways stay put. 'relearn' forgets every way but keeps the room numbers, since the coins are still lying there. A cave of forward, right, back and left is followed by the facing. Kept for this session only" },
   { "mapprompts [on|off]", "when one action sends several commands at once (a speedwalk, an alias, a key), show only the last prompt. On by default" },
 
   { "FIXING THE MAP -- changes rooms, exits or areas" },
