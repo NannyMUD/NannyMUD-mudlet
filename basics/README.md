@@ -78,6 +78,7 @@ In Mudlet, `nanny help` lists these, `nanny help <command>` shows one in full an
 - **`nanny hide <pane>`** Close a pane, the same as the X on its title strip. The panes: vitals, chat, score, cooldowns, party, guild and log.
 - **`nanny show <pane>`** Bring a closed pane back, the same as its entry in the right-click menu of any strip or bar.
 - **`nanny layout`** Where each pane is, and whether the GMCP log is shown.
+- **`nanny chat split|join <tab>`** 'split' gives a chat tab a pane of its own, which you place like any other pane; 'join' puts it back among the tabs. The same by mouse: drag a tab out of the tab bar, or right-click it for 'Own pane'; drag the pane's strip onto the chat pane, or right-click the strip for 'Back into Chat'. Its messages still show under All. Remembered across restarts.
 - **`nanny reset`** Put every pane back in its default place and size, closed ones too.
 - **`nanny off`** Hide the whole panel, map and panes, so the text has the whole window: for a second session in MultiView. It stays off across restarts of this profile until 'nanny on'.
 - **`nanny on`** Bring the panel back after 'nanny off'.
@@ -108,6 +109,7 @@ In Mudlet, `nanny help` lists these, `nanny help <command>` shows one in full an
 - **Moving a pane.** Drag a pane by its title strip: onto another pane to stack with it, near a pane's edge to split that space, or to an empty edge of the window to open a panel there.
 - **Resizing.** Drag the thin bars between panes, and at a panel's inner edge.
 - **Closing.** The X at the right end of a title strip closes that pane. Right-click any strip or bar for a menu that shows closed panes again or resets the layout.
+- **Chat tabs.** Drag a tab out of the chat's tab bar to give it a pane of its own, placed where you drop it; right-clicking the tab does the same. Drag that pane's strip back onto the chat pane, or right-click the strip, to put it back among the tabs.
 - **The rotation strip.** On the Strigoi guild pane, left click steps the mode, right click picks the next list.
 
 Sizes, places and closed panes are remembered across restarts.

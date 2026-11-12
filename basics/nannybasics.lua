@@ -171,6 +171,29 @@ function N.relayout()
       end
     end
   end
+  -- chat tabs with a pane of their own: start beside the chat pane, go back into it when
+  -- dropped onto it or from their strip's right-click menu
+  local chatCell = MudletBorders.where("nanny:channels") or N.place.channels
+  local names = {}
+  for name, t in pairs(N.tabs or {}) do if N.split[name] and t.pane then names[#names + 1] = name end end
+  table.sort(names)
+  for k, name in ipairs(names) do
+    local t = N.tabs[name]
+    local edge = MudletBorders.edge_of(MudletBorders.where(N.split_id(name)) or chatCell)
+    MudletBorders.slot(N.split_id(name), {
+      cell = chatCell, order = 30 + k, title = name,
+      cross = (edge == "left" or edge == "right") and N.SIDE_W or N.BAR * 2,
+      cb = function(x, y, w, h)
+        pcall(function() t.pane:show() ; t.pane:move(x, y) ; t.pane:resize(w, h) end)
+        pcall(function() t.con:move(0, 0) ; t.con:resize(w, h) end)
+        N.chat_wrap()
+      end,
+      menu = { { "Back into Chat", function() N.chat_join(name) end } },
+      on_drop = function(mx, my)
+        if N.over_chat(mx, my) then N.chat_join(name) ; return true end
+      end,
+    })
+  end
 end
 
 -- a pane by the name on its strip or its own: chat, score, the guild's name, ...
@@ -337,28 +360,65 @@ local function build_channels(box)
   N.tabs, N.tabOrder = N.tabs or {}, N.tabOrder or {}
 end
 
+local CHAT_KEEP = 500                  -- messages per tab kept to print again at a new width
+local replay
+
+-- channels with a pane of their own, kept in the profile directory, one name a line
+local function split_file() return getMudletHomeDir() .. "/nanny_chatsplit.txt" end
+if not N.split then
+  N.split = {}
+  local fh = io.open(split_file(), "r")
+  if fh then
+    for l in fh:lines() do if l ~= "" then N.split[l] = true end end
+    fh:close()
+  end
+end
+
+-- each tab wraps at the width of the pane it is in: the chat pane, or its own
 function N.chat_wrap()
   if not N.chatBox then return end
   local cw = calcFontSize(N.CHAT_FONT) or 8
-  local ok, w = pcall(function() return N.chatBox:get_width() end)
-  w = (ok and type(w) == "number" and w > 0) and w or 360
-  local cols = math.max(20, math.floor((w - 20) / cw))
-  for _, t in pairs(N.tabs or {}) do pcall(function() t.con:setWrap(cols) end) end
+  local function cols_of(box)
+    local ok, w = pcall(function() return box:get_width() end)
+    w = (ok and type(w) == "number" and w > 0) and w or 360
+    return math.max(20, math.floor((w - 20) / cw))
+  end
+  local changed = false
+  for name, t in pairs(N.tabs or {}) do
+    local cols = cols_of(N.split[name] and t.pane or N.chatBox)
+    pcall(function() t.con:setWrap(cols) end)
+    if t.cols and t.cols ~= cols then changed = true end
+    t.cols = cols
+  end
+  -- Mudlet never re-wraps printed text, so a new width prints the kept messages again,
+  -- once the size has settled: a drag resizes many times
+  if changed then
+    if N.chatReplayT then pcall(killTimer, N.chatReplayT) end
+    N.chatReplayT = tempTimer(0.5, function() N.chatReplayT = nil ; replay() end)
+  end
 end
 
 -- each tab's console fills every pixel below the tab bar (see component() on negative heights)
 local function fit_channels(w, h)
-  for _, t in pairs(N.tabs or {}) do
-    pcall(function() t.con:move(0, N.TAB_H) ; t.con:resize("100%", math.max(1, h - N.TAB_H)) end)
+  for name, t in pairs(N.tabs or {}) do
+    if not N.split[name] then
+      pcall(function() t.con:move(0, N.TAB_H) ; t.con:resize("100%", math.max(1, h - N.TAB_H)) end)
+    end
   end
 end
 
 function N.tab(name)
   if N.tabs[name] then return N.tabs[name] end
-  local t = {}
+  local t = { hist = {} }
   t.label = Geyser.Label:new({ name = "NChatTab_" .. safe(name) }, N.tabBar)
   t.label:echo("<center>" .. name)
-  t.label:setClickCallback(function() N.select(name) end)
+  -- a press selects on release unless the tab is pulled out; a right-click offers its own pane.
+  -- A Mudlet with no release callback keeps the plain click.
+  if pcall(function() t.label:setReleaseCallback(function(ev) N.tab_release(name, ev) end) end) then
+    t.label:setClickCallback(function(ev) N.tab_press(name, ev) end)
+  else
+    t.label:setClickCallback(function() N.select(name) end)
+  end
   t.con = Geyser.MiniConsole:new({ name = "NChatCon_" .. safe(name), x = 0, y = N.TAB_H,
     width = "100%", height = 10, autoWrap = false, scrollBar = true, fontSize = N.CHAT_FONT,
     color = "black" }, N.chatBox)
@@ -369,6 +429,8 @@ function N.tab(name)
   N.tabOrder[#N.tabOrder + 1] = name
   if N.current and N.current ~= name then t.con:hide() end
   N.tab_style(name)
+  -- a channel given its own pane in an earlier session gets it back on its first message
+  if N.split[name] then N.chat_split(name) end
   return t
 end
 
@@ -379,16 +441,123 @@ function N.tab_style(name)
 end
 
 function N.select(name)
+  if N.split[name] then return end
   N.current = name
   for n, t in pairs(N.tabs) do
-    if n == name then t.con:show() ; t.unread = false else t.con:hide() end
-    N.tab_style(n)
+    -- a tab in its own pane is always shown, whichever tab the chat pane has selected
+    if not N.split[n] then
+      if n == name then t.con:show() ; t.unread = false else t.con:hide() end
+      N.tab_style(n)
+    end
   end
 end
 
-local function put(t, ch, talker, text)
+-- ---- a chat tab in a pane of its own ----
+local function split_save()
+  local names = {}
+  for n in pairs(N.split) do names[#names + 1] = n end
+  table.sort(names)
+  local fh = io.open(split_file(), "w")
+  if fh then fh:write(table.concat(names, "\n")) ; fh:close() end
+end
+
+function N.split_id(name) return "nanny:chat:" .. safe(name) end
+
+local function label_out(name)
+  local t = N.tabs[name]
+  if t then pcall(function() N.tabBar:remove(t.label) ; t.label:hide() ; N.tabBar:organize() end) end
+end
+
+-- is the pointer over the chat pane (to drop a tab back into it)?
+function N.over_chat(mx, my)
+  if not (N.chatBox and mx) then return false end
+  local ok, inside = pcall(function()
+    local x, y = N.chatBox:get_x(), N.chatBox:get_y()
+    local w, h = N.chatBox:get_width(), N.chatBox:get_height()
+    if type(x) ~= "number" or type(w) ~= "number" then return false end
+    return mx >= x and mx < x + w and my >= y and my < y + h
+  end)
+  return ok and inside or false
+end
+
+-- Give a tab its own pane. `keepLabel` leaves its tab in the bar until the mouse is released:
+-- Qt sends the release to the label that was pressed, and that release ends the drag.
+function N.chat_split(name, keepLabel)
+  local t = N.tabs[name]
+  if not t or name == "All" then return false end
+  N.split[name] = true
+  split_save()
+  if not t.pane then
+    t.pane = Geyser.Container:new({ name = "NChatPane_" .. safe(name), x = 0, y = 0, width = 100, height = 100 })
+  end
+  pcall(function() t.con:changeContainer(t.pane) end)
+  pcall(function() t.con:move(0, 0) ; t.con:resize("100%", "100%") ; t.con:show() end)
+  if not keepLabel then label_out(name) end
+  if N.current == name then N.select("All") end
+  N.relayout()
+  return true
+end
+
+function N.chat_join(name)
+  local t = N.tabs[name]
+  if not N.split[name] then return false end
+  N.split[name] = nil
+  split_save()
+  if type(MudletBorders) == "table" then MudletBorders.remove(N.split_id(name)) end
+  if t then
+    if t.pane then pcall(function() t.pane:hide() end) end
+    pcall(function() t.con:changeContainer(N.chatBox) end)
+    pcall(function() N.tabBar:add(t.label) ; t.label:show() ; N.tabBar:organize() end)
+    local ok, bh = pcall(function() return N.chatBox:get_height() end)
+    if ok and type(bh) == "number" then fit_channels(nil, bh) end
+    N.select(name)
+  end
+  N.relayout()
+  return true
+end
+
+function N.tab_press(name, ev)
+  if type(ev) == "table" and ev.button == "RightButton" then
+    if type(MudletBorders) == "table" and MudletBorders.popup and name ~= "All" then
+      MudletBorders.popup({ { "Own pane", function() N.chat_split(name) end } })
+    end
+    return
+  end
+  local mx, my = getMousePosition()
+  N.tabDrag = { name = name, sx = mx, sy = my }
+  if N.tabDragT then pcall(killTimer, N.tabDragT) end
+  N.tabDragT = tempTimer(0.03, function() N.tab_drag_tick() end, true)
+end
+
+-- a tab moved this far while held is pulled out of the bar into a pane of its own
+local PULL = 12
+function N.tab_drag_tick()
+  local d = N.tabDrag
+  local mx, my = getMousePosition()
+  if not d or d.torn or not mx or not d.sx then return end
+  if math.abs(mx - d.sx) + math.abs(my - d.sy) < PULL or d.name == "All" then return end
+  if N.tabDragT then pcall(killTimer, N.tabDragT) ; N.tabDragT = nil end
+  if type(MudletBorders) ~= "table" or not MudletBorders.drag_pane then return end
+  d.torn = N.chat_split(d.name, true)
+  if d.torn then MudletBorders.drag_pane(N.split_id(d.name)) end
+end
+
+function N.tab_release(name, ev)
+  if N.tabDragT then pcall(killTimer, N.tabDragT) ; N.tabDragT = nil end
+  local d = N.tabDrag
+  N.tabDrag = nil
+  if type(ev) == "table" and ev.button == "RightButton" then return end
+  if d and d.torn then
+    MudletBorders.drag_end()
+    label_out(d.name)
+    return
+  end
+  N.select(name)
+end
+
+local function put(t, ch, talker, text, at)
   local w = t.con.name
-  setFgColor(w, 120, 120, 120) ; echo(w, os.date("%H:%M") .. " ")
+  setFgColor(w, 120, 120, 120) ; echo(w, at .. " ")
   -- the line names its channel itself, by a tag ([Treasure]) or a verb (You say:); add nothing
   local c = chan_colour(ch)
   local tag, rest = text:match("^(%b[])%s*(.*)$")
@@ -405,6 +574,16 @@ local function put(t, ch, talker, text)
   resetFormat(w)
 end
 
+-- every tab cleared and its kept messages printed again at the console's current wrap
+replay = function()
+  for _, t in pairs(N.tabs or {}) do
+    if t.hist then
+      pcall(clearWindow, t.con.name)
+      for _, m in ipairs(t.hist) do put(t, m[1], m[2], m[3], m[4]) end
+    end
+  end
+end
+
 function N.channel(v)
   if type(v) ~= "table" or not N.chatBox then return end
   local ch = tostring(v.channel or "?")
@@ -412,9 +591,15 @@ function N.channel(v)
   -- the game may send the line already wrapped; the pane wraps it to its own width
   local text = tostring(v.text or ""):gsub("\27%[[%d;]*m", ""):gsub("%s*\n%s*", " ")
   text = text:gsub("^%s+", ""):gsub("%s+$", "")
+  local at = os.date("%H:%M")
   for _, name in ipairs({ "All", ch }) do
     local t = N.tab(name)
-    put(t, ch, talker, text)
+    -- a tab made before a reload holds lines never kept: it is never cleared to print again
+    if t.hist then
+      t.hist[#t.hist + 1] = { ch, talker, text, at }
+      if #t.hist > CHAT_KEEP then table.remove(t.hist, 1) end
+    end
+    put(t, ch, talker, text, at)
     if name ~= N.current then t.unread = true ; N.tab_style(name) end
   end
 end
@@ -2520,6 +2705,8 @@ HELP.sections = {
     { "nanny show <pane>", "bring a closed pane back",
       "Bring a closed pane back, the same as its entry in the right-click menu of any strip or bar." },
     { "nanny layout", "where each pane is", "Where each pane is, and whether the GMCP log is shown." },
+    { "nanny chat split|join <tab>", "a chat tab in a pane of its own, or back",
+      "'split' gives a chat tab a pane of its own, which you place like any other pane; 'join' puts it back among the tabs. The same by mouse: drag a tab out of the tab bar, or right-click it for 'Own pane'; drag the pane's strip onto the chat pane, or right-click the strip for 'Back into Chat'. Its messages still show under All. Remembered across restarts." },
     { "nanny reset", "every pane back to its default place and size",
       "Put every pane back in its default place and size, closed ones too." },
     { "nanny off", "hide the whole panel",
@@ -2561,6 +2748,7 @@ HELP.pages = {
     "Moving a pane|Drag a pane by its title strip: onto another pane to stack with it, near a pane's edge to split that space, or to an empty edge of the window to open a panel there.",
     "Resizing|Drag the thin bars between panes, and at a panel's inner edge.",
     "Closing|The X at the right end of a title strip closes that pane. Right-click any strip or bar for a menu that shows closed panes again or resets the layout.",
+    "Chat tabs|Drag a tab out of the chat's tab bar to give it a pane of its own, placed where you drop it; right-clicking the tab does the same. Drag that pane's strip back onto the chat pane, or right-click the strip, to put it back among the tabs.",
     "The rotation strip|On the Strigoi guild pane, left click steps the mode, right click picks the next list.",
     "Sizes, places and closed panes are remembered across restarts.",
   } },
@@ -2682,6 +2870,21 @@ function N.cmd(arg)
     N.log_toggle()
   elseif verb == "help" then
     N.help(rest)
+  elseif verb == "chat" then
+    local how, word = rest:match("^(%a+)%s+(.+)$")
+    local name
+    for n in pairs(N.tabs or {}) do if word and n:lower() == word:lower() then name = n end end
+    if (how == "split" or how == "join") and not name then
+      say("no chat tab called '" .. tostring(word) .. "' yet; it appears with its first message.")
+    elseif how == "split" then
+      if name == "All" then say("'All' stays in the chat pane.")
+      elseif N.split[name] then say(name .. " already has its own pane.")
+      else N.chat_split(name) ; say(name .. " has its own pane; drag its strip onto Chat to put it back.") end
+    elseif how == "join" then
+      if N.chat_join(name) then say(name .. " is back in the chat pane.") else say(name .. " is already in the chat pane.") end
+    else
+      say("'nanny chat split <tab>' gives a tab its own pane, 'nanny chat join <tab>' puts it back.")
+    end
   elseif verb == "place" then
     local what, where = rest:match("^(%S+)%s+(%S+)$")
     if what then N.place_comp(what, where)
