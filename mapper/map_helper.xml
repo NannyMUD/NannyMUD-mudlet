@@ -134,7 +134,7 @@ elro.route_start(a)</script>
 				<script>elro.with_rest(matches[2], elro.map_help)</script>
 				<command></command>
 				<packageName></packageName>
-				<regex>^maphelp(?:\s+(\S+))?$</regex>
+				<regex>^maphelp(?:\s+(.+))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
 				<name>mapwipe</name>

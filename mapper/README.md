@@ -87,60 +87,178 @@ Rooms are placed on a real grid rather than strung out from where you happened t
 The engine solves each area as a graph: it finds the cycles, keeps a corridor straight, holds
 a 45° diagonal at 45° where it can, and when a loop cannot close truthfully it decides which
 edge is least bad to bend rather than letting the map drift. Up and down exits dock as
-separate floors. Areas too small to deserve a tab fold into the world map.
+separate floors. Areas too small to deserve a tab fold into the world map. It relayouts as you
+explore, in the background, without freezing the client.
 
-It relayouts as you explore, in the background, without freezing the client.
+Around the map:
 
-`mapmark bank` remembers the room you are in; from then on typing `bank` walks there. A bare
-`mapmark` remembers "here" and `mapreturn` walks back: mark, go and sell, return. Marks are
-kept in the map.
+- **Getting about.** Double-click a room to walk there. `mapgoto`, `mapnear` and named marks
+  (`mapmark bank`, then `bank`) walk you; `mapavoid` keeps speedwalks out of a death trap.
+- **Notes.** `mapnote` writes on a room, `mapnotes` and `mapsearch` find them again.
+- **Mazes.** `mapcoins` tells the identical rooms of a maze apart by the coins you drop, draws
+  them on a map of their own, and walks you to the ways not yet tried.
+- **Pictures and other maps.** `mapexport` writes a map as a picture to print or put on a
+  wiki; `mapimport` joins another character's map into yours; `maphelp share` says how to copy
+  or back up a map.
+- **Fixing the map.** Delete rooms and exits, record exits you type as commands, and draw
+  areas together.
 
-`mapnote orc guard, 2 swords` writes a note on the room you are in; a room holds as many as
-you like. Click a room on the map and its notes show in the map's corner. Right-click a room
-for "Add note" and "Notes", `mapnotes` lists every room with notes, area by area, and
-`mapnotes rabbit` only the rooms whose notes mention a rabbit. `mapsearch` also finds rooms by what
-their notes say. Notes are kept in the map too.
+Every command is listed below, and in Mudlet `maphelp <word>` searches the same text.
 
-In a maze where every room looks the same, `mapcoins on` drops a different number of gold
-coins in each empty room you walk into, so each room is known by its coins, and draws them on
-a map of their own as you go, with a stub on each direction not yet tried. `mapcoins` lists
-the rooms numbered so far: which way leads where, which come back to the same room, which did
-not move you, which showed something else (a room of another name is often the way on) and
-which are untested. `mapcoins off` stops dropping, `mapcoins reset` wipes that map. It is gone again at
-the next start.
 
-`mapcoins go` walks you to the nearest room with an untested way, `mapcoins go 12` to room 12;
-typing anything stops it. `mapcoins twoway` takes every way you walk to lead back the way you
-came, for a maze that keeps to that. `mapcoins layout` tidies the coin map with the mapper's
-engine once, and `mapcoins relearn` forgets every way but keeps the numbers. In a cave where
-you can only go forward, right, back and left, the mode keeps track of which way you face and
-reads what the room says lies in front of you and to each side; after each move it prints
-what is untested in those same words.
+<!-- help:begin (written by tools/help_md.lua from lua/help.lua: edit there) -->
+## Commands
 
-Unexplored exits are drawn as short slate-blue lines rather than Mudlet's
-stubs, which it repaints every frame, so a big half-explored area stays fast. `mapview` is a
-prototype second window that draws the map you are on in the style of `mapexport`, with a ring
-for you and click-to-walk.
+In Mudlet, `maphelp` lists these, `maphelp <command>` shows one in full and `maphelp <word>` finds every entry that mentions the word.
 
-`mapexport` writes the map you are standing on as a picture: white, with pale terrain tints,
-every room numbered, and a list of the rooms with where each way off the map leads. It is an
-SVG, which any browser opens and a wiki can show. `mapexport a4` fits the same drawing on one
-A4 sheet to print.
+### Getting started
 
-That is a picture, not a copy of your map. The map itself lives in the Mudlet profile, and
-Mudlet moves it: Settings, the Mapper tab, has **Copy map to other profile(s)**, **Save
-map...** and **Load map...** (loading replaces the map in that profile; nothing is merged).
-Everything this package knows travels in that file. Reopen a profile after a map is loaded
-into it. `maphelp share` says the same in the client.
+- **`maphelp [command or word]`** Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself) and 'maphelp share' (moving your map).
+- **`maplegend`** What the colours, dots, letters and lines on the map mean, and how to read a room.
+- **`mapwin [dock [width]|embed|left|right|lock|unlock|reset]`** Bare, open or close Mudlet's own map window (the same as its Map button). 'mapwin dock' puts the map in a panel on the right, shared with NannyBasics' panes; again closes it, 'mapwin dock <width>' sets its width. 'mapwin embed' is a small window over a top corner of the text instead; there 'left' and 'right' pick the corner, 'lock' removes the frame, 'unlock' brings it back and 'reset' restores the first size. Mudlet can show the map in only one of these per session: to change over, close the one you have, restart Mudlet, then open the other.
+- **`mapupdate`** Replace this package with the newest release, NannyBasics too if you have it. Shortly after Mudlet starts you are told when one is out. It downloads first, so a failed download changes nothing; your map lives in the profile and is untouched.
+- **`mapprompts [on|off]`** When one action sends several commands at once (a speedwalk, an alias, a key), show only the last prompt. On by default.
 
-To **join** two characters' maps instead, use `mapimport` in the profile that should receive
-the other's exploring. Bare, it lists your other profiles that have a saved map;
-`mapimport <profile>` says what it would add; `mapimport <profile> confirm` adds it. Rooms,
-exits, recorded exits, marks, notes and avoided rooms this map lacks come over. Where the two
-maps disagree, this one's is kept. Your map is saved first, and `mapimport undo` puts it back
-(in the same session, and anything explored since the import is lost). If the other map draws
-an area into another one, the import says so by name; `mapunmerge` reverses it. Close the
-other profile before importing, so its latest exploring is in its saved map.
+### Getting about
+
+- **`mapgoto <id|area>`** Speedwalk to a room id, or to the nearest room of a named area (part of the name is enough). Double-clicking a room on the map walks there too, as does 'Walk here' in its right-click menu. Recorded exits ('crawl hole') are walked with their own command.
+- **`mapnear [terrain]`** Walk to the nearest room of a terrain: heal, shop, port and so on. Bare, the names you can search for.
+- **`mapmark [name]`** Remember the room you are in under a name: from then on typing that name walks there ('mapmark bank', later 'bank'). Bare, it marks 'here', and 'mapreturn' walks back: mark, go and sell, return. 'mapmarks' lists the marks, 'mapunmark <name>' forgets one and gives the word back. Marks are kept in the map.
+- **`mapavoid [id,...|sel]`** Keep speedwalks out of a room (bare, the one you are in): a death trap, an aggressive monster. The same as 'Lock' in the map's right-click menu. 'mapavoids' lists them.
+- **`mapunavoid [id,...|sel]`** Let speedwalks use an avoided room again. 'mapavoids' lists them.
+- **`mapsearch <text>`** Find rooms whose name, area's name or notes contain the text, in any case. It lists them with the ids 'mapgoto' takes.
+
+### Notes
+
+- **`mapnote [text]`** Add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); a room holds as many as you like. Bare, list its notes. 'mapnote del <n>' and 'mapnote clear' remove them; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner. Notes are kept in the map.
+- **`mapnotes [text]`** Every room with notes, area by area, or only those whose notes contain the text ('mapnotes rabbit').
+
+### Pictures and other maps
+
+- **`mapexport [area] [a4] [plain]`** Write one map as a picture: an SVG any browser opens and a wiki can show. White, pale terrain tints, every room numbered, and a list of the rooms with where each way off the map leads. Bare, the map you are on. 'a4' fits it on one sheet to print; 'plain' leaves the tints out. A picture, not a copy of your map: 'maphelp share' says how to copy that.
+- **`mapview [fit|plain|reset|zoom <px>]`** A prototype: the map you are on drawn in the style of mapexport, in a second window. A red ring marks you; click a room to walk there; the wheel zooms, 'fit' shows the whole map. Mudlet's map stays where it is.
+- **`mapimport [profile] [confirm|undo]`** Join another profile's map into this one: rooms, exits, recorded exits, marks, notes and avoided rooms it has that this one lacks. Bare, list your other profiles that have a saved map; with a name, what it would add; 'confirm' does it. Where the two disagree, this one is kept. Your map is saved first, and 'mapimport undo' puts it back (this session only; anything explored since is lost). If the other map draws an area into another one, the import says so by name; 'mapunmerge' reverses it. Close the other profile first, so its latest exploring is in its saved map.
+
+### Mazes
+
+- **`mapcoins [on|off|reset|relearn|twoway|back|go [n]|layout]`** For a maze whose rooms all look alike. Switch it on inside the maze ('on <room name>' if it cannot read the name): after each move into a room with no gold it drops a number of coins no other room has, so every room is known by its coins, and draws the rooms on a map of their own as you walk. Lines leave each room in the direction you walked, coloured by direction, with an arrow where they led; a short line marks a way not yet tried. Bare, the rooms numbered so far: where each way leads, which come back to the same room, which did not move you, which showed something else, and which are untested. 'go' walks to the nearest room with an untested way, 'go <n>' to room n, a step at a time; typing anything stops it. 'twoway' takes every way walked to lead back the way you came, for a maze that keeps to that. 'layout' has the mapper's engine tidy the coin map once. 'relearn' forgets every way but keeps the room numbers, since the coins are still lying there. 'reset' wipes it all and starts again at 1; 'off' stops dropping. In a cave of forward, right, back and left it keeps track of your facing and reads what each room says lies around you; 'back stay' is for a cave where back steps away without turning you, 'back turn' changes it again. Kept for this session only.
+
+### Fixing the map
+
+- **`mapwipe [area] [confirm]`** Delete the whole map, or every room the game put in one area. Without 'confirm' it only says what it would delete.
+- **`mapdelroom <id>|sel`** Delete a room and every exit to or from it, then redraw; 'sel' is every room selected on the map (also in its right-click menu as 'Delete rooms'). Use this rather than Mudlet's own delete: it clears the room's records and drawn lines too.
+- **`mapdeledge <from> <to>`** Delete every exit from one room to another, compass and special.
+- **`maprecordmove [command]`** Record a special or multi-step exit ('maprecordmove enter gate'); bare, it captures the next one you walk. A recorded exit is kept like any other and speedwalks use it.
+- **`maprecordroute a,b,c`** Record the known way through rooms the map does not show (a blocked maze) as one exit, one way.
+- **`maprecordundo`** Take back the exit just recorded, and restore the one it replaced.
+- **`mapmerge <area>`** Merge that area into the one you are standing in, so both are drawn as one map.
+- **`mapunmerge <area>`** Undo a merge, yours or one the game suggested. 'mapmerges' lists both.
+- **`maphints [on|off [area]]`** The game may suggest drawing an area on another's map (a town built by several wizards). Follow the suggestions or not, for all areas or one; bare, list them.
+
+### Appearance
+
+- **`mapterrain [on|off]`** Colour rooms by terrain; 'maplegend' says which colour is what.
+- **`mapglyphs [on|off]`** A letter on rooms with an exit you type instead of a direction.
+- **`mapstubs [on|off|edges|classic|halo N]`** What the map draws for unexplored exits. Mudlet redraws every stub of its own every frame, so a big part-explored area is slow. 'edges' draws each unexplored exit as a short line instead, which is far cheaper; 'classic' is Mudlet's stubs with a halo, showing only the stubs within N cells of you once an area has a lot. Nothing is lost either way.
+- **`mapvert [on|off]`** Dock up and down exits as separate floors. Remembered.
+- **`mapareamin <n>`** The smallest cluster of rooms that keeps an area of its own instead of folding into the world map. Remembered.
+
+## Advanced commands
+
+Shaping the map by hand, mazes, diagnostics and tuning; `maphelp advanced` in Mudlet.
+
+### Shaping the map by hand
+
+- **`mapcur <id|area>`** Set the current room by hand: an id, or any room of a named area.
+- **`mapfold <dir>`** Fold the branch through that exit into a submap.
+- **`mapunfold <dir>`** Undo a fold. 'mapfolds' lists them.
+- **`mapsteal <id,...>`** Steal rooms into the area you are standing in, in one relayout.
+- **`mapunsteal <id,...>`** Return stolen rooms to their own area. 'mapsteals' lists them.
+- **`mapouter [clear] [id,...]`** Mark rooms as on the outer face, drawn outermost; bare, list them, 'clear' unmarks.
+
+### Mazes and shifting exits
+
+- **`mapmaze [auto [area|.]|sel]`** Fold untruthful clusters into a submap: bare, the current room's; 'auto' the whole map, 'auto <area>' one area. 'sel' marks every room selected on the map as maze and folds once, for mirror mazes, which change nothing and so are invisible to 'auto'.
+- **`mapunmaze [all|id,...]`** Release the current room's whole maze submap; with room ids (or 'here') release only those, leaving the rest folded; 'all' releases every submap and clears the maze override. 'mapmazes' lists them.
+- **`mapmazelive [area|.|clear]`** What the last solve did with this area's maze doors: which are drawn as spokes, which fell back to a stub, and whether the area was vetoed; 'clear' lifts vetoes.
+- **`mapmazefit [area|.]`** Report whether each maze could be one layout vertex: its doors, their directions, and where that vertex would sit. Changes nothing.
+- **`mapexitlock [dir]`** Lock the current room's compass exits, or one, so the game's data cannot re-point them.
+- **`mapexitunlock [dir]`** Clear exit locks on the current room; bare, all of them.
+- **`mapmutreset [id|area|all]`** Wipe the counts of exits that changed; bare, the current room's.
+
+### Appearance, in detail
+
+- **`mapterrain list|here|halo`** 'list': how many rooms of each terrain the map holds. 'here': what the game sent for this room and what it became, which tells 'not sent' from 'not coloured'. 'halo <radius> [rim alpha] [centre alpha]' tunes the secondary ring; bare, the current values. Bare 'mapterrain' repaints from stored data.
+- **`mapglyphs list|auto on|off`** 'list': which rooms are glyphed, their exit names and where each came from. 'auto on|off': count guessed special exits as evidence, or only advertised and recorded ones.
+- **`mapvert [area|all]`** Up and down census, and what the last pack honoured and drew.
+
+### Diagnostics
+
+- **`mapprofile [on|off|ms]`** Time the phases of each move (graph, terrain, guess, relayout, view) and print those over <ms>; for finding what a slow move is doing.
+- **`mapecho [on|off]`** Report when a relayout finishes: time, frames, the solver's profile. Off by default, and then no relayout prints anything.
+- **`mapoff [id]`** What is recorded for a room about exits that leave the map: the record, the stubs, the lines.
+- **`mapstrict [on|off]`** Draw an exit only when the game reports the command you sent, and ignore a known room reported under another area. For a guild that rewrites what you see; following a party leader then draws no exits. Off by default.
+- **`mapaudit [all]`** Exits whose geometry the exits walked both ways contradict: usually mistyped links.
+- **`mapedges [id]`** Outgoing and incoming exits for a room; bare, the current one.
+- **`mapmut [id]`** Per-exit change counters and lock state; bare, the current room.
+- **`mapcrossings`** Every crossing as exit by exit, and what licensed it: cost, a proven wire, or nothing.
+- **`mapcaps`** Why each branch was capped during a render.
+- **`mapdump [sel|all]`** Dump this area's rooms, coordinates and exits; 'sel' the rooms selected on the map, 'all' every room's area and coordinates.
+
+### Replay
+
+- **`mapsteps`** List room placement steps (set 'lua elro.stepDebug=true' before 'maprelayout this').
+- **`mapstep [back|id|step n|off|reset]`** Bare, advance one step; 'back' one step back; an id stops just before that room is placed.
+- **`maptop [n]`** The slowest placement steps of the last relayout (set 'lua elro.stepTime=true' first).
+- **`maplever [name ...]`** Force named levers to the front of every ranking; bare, list them, 'off' clears.
+
+### Tuning, timing and state
+
+- **`maprelayout [all|this]`** Redraw the maps that changed; 'all' every map, 'this' the one you are looking at, changed or not. It happens by itself; this is for after a setting change.
+- **`mapauto on|off|idle N`** Automatic relayout: at once when the drawing is visibly wrong, otherwise N seconds after you stop (on, 3 seconds by default).
+- **`mapknobs [reset]`** Every knob and probe overridden this session; 'reset' clears them. They survive mapreload, so a knob left set looks exactly like a code change that did nothing: run this before trusting any measurement.
+- **`mapbg [on|off|cancel|slice N|gc N|hook N]`** Background relayout, which does not freeze the client: state, on or off, abort, or the per-frame budget in ms. 'gc N' collects between frames; 'hook N' reports the source lines that blew the frame budget.
+- **`mapwd <secs|off>`** Watchdog: abort a runaway relayout and say where it was, instead of freezing Mudlet (60 seconds by default).
+- **`mapcs [reset]`** Snapshot stats; 'reset' forces a full re-read of Mudlet's room state.
+- **`mapdebug on|off`** Switch layout step tracing on or off.
+- **`mapreload`** Re-read lua/modules.lua and every module from disk, with no reinstall; also drops the room-state snapshot ('mapcs reset' does that alone).
+- **`mapsrc [path]`** Show or set the directory the modules are loaded from. Remembered.
+
+## On the map, with the mouse
+
+- **Double-click a room.** Walks there by the shortest way, using recorded exits where they are needed.
+- **Click a room.** Shows its notes in the map's corner.
+- **Right-click a room.** Besides Mudlet's own entries: 'Walk here', 'Add note', 'Notes' and 'Delete rooms' (every selected room, cleanly; see 'mapdelroom'). Mudlet's 'Lock' keeps speedwalks out, the same as 'mapavoid'.
+- **The docked panel.** Drag the bar at its inner edge to make it wider or narrower; the size is remembered. The X on the map's strip closes it; right-click any strip or bar to show it again, hide or show panes, or reset the layout. With NannyBasics, drag a pane by its title strip to move it, and the bars between panes to resize them.
+- **In mapview.** Click a room to walk there; the wheel zooms.
+
+## What happens by itself
+
+- **As you walk.** Each move places the room and, when the drawing is visibly wrong or a few seconds after you stop, the area is laid out again in the background without freezing the client ('mapauto').
+- **Small areas.** An area of only a few rooms is drawn on the world map instead of a tab of its own ('mapareamin').
+- **The dark.** In a dark room the map shows you off the map; its exit stays unexplored, since it maps like any other once you bring a light.
+- **Gates.** A magician's gate is not an exit: 'enter gate' maps the room you come out in without linking it to the room you left. A gate that always stands in the same spot can be recorded with 'maprecordmove enter gate'.
+- **The game's suggestions.** The game may suggest drawing a town built by several wizards as one map; this is followed unless you say otherwise ('maphints').
+- **Prompts.** A speedwalk or alias that sends several commands shows one prompt, not one per command ('mapprompts').
+- **Updates.** Shortly after Mudlet starts you are told when a newer release is out ('mapupdate').
+- **Maze coins.** The coin maze's own map is wiped at the next start ('mapcoins').
+
+## Moving your map
+
+'mapexport' makes a picture to print. It does not copy your map. The map itself lives in your Mudlet profile, and Mudlet moves it:
+
+- **To another profile of yours.** Settings, the Mapper tab, 'Copy map to other profile(s)': pick the profiles and press Copy.
+- **To a file.** Settings, the Mapper tab, 'Save map...'. A backup, or something to hand to another player.
+- **From a file.** Settings, the Mapper tab, 'Load map...'. This REPLACES the map in that profile; the two are not merged. Save your own first if you may want it back.
+- **Joining two maps.** 'mapimport <profile>' adds what another profile's map has and this one lacks, and keeps this one's where they disagree. Bare 'mapimport' lists the profiles.
+
+After a map is loaded or copied into a profile that is open, close and reopen that profile so the mapper reads the new map from the start.
+
+The file carries everything: rooms, exits, the special exits you recorded, terrain, merges, folds, your marks and room notes, and the rooms speedwalks keep out of. Only the map window's size and corner belong to the profile. The receiving profile needs this package too, and 'toggle gmcp' and 'toggle gmcp room' in the game to keep mapping.
+
+A map shows where you have been. Handing one over hands over that exploring.
+
+<!-- help:end -->
 
 ## Using it with another MUD
 
@@ -182,6 +300,9 @@ without reinstalling the package, so an edit is one command away from being live
 sh tools/run-gate.sh full     # tests + the layout regression canary
 sh tools/build-package.sh     # -> ElrohirMapper.mpackage (refuses if the gate is red)
 ```
+
+The command reference above is written from `lua/help.lua` by `luajit tools/help_md.lua`; run it
+after changing the help, and the gate fails until you do.
 
 `DESIGN.md` is the architecture. The layout engine's own notes are in the header comments of
 `lua/eqw.lua` and `lua/walk.lua`.

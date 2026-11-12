@@ -833,10 +833,14 @@ halt.
 - Comment-only or move-only edits are proved with a comment-blind token comparison of the source,
   since bytecode embeds line numbers.
 - **Commands.** `map_helper.xml`'s aliases are one-liners that call an `elro.*` function; the help
-  text lives in `core.lua`'s `HELP_BASIC` / `HELP_ADV` tables, not in the XML, so editing it needs
-  no entity escaping. The three groups are by what a command TOUCHES — map data, appearance,
-  diagnostics — and `maphelp advanced` carries the diagnostic and tuning half. A new alias belongs
-  in one of those two tables; `analysis/check_help.py` compares alias regexes against help rows.
+  text lives in `lua/help.lua`, not in the XML, so editing it needs no entity escaping. It is the
+  one source: `maphelp` reads it in the client and `tools/help_md.lua` writes the README's command
+  reference from it, so the two cannot drift (`test_help` fails when they do). Each row has a
+  one-line summary for the list and a full text for `maphelp <command>`; any other word searches
+  every row and page, so there is no separate search command to learn. Everyday commands are
+  grouped by what a player is doing, `maphelp advanced` holds hand-shaping, diagnostics and tuning.
+  Things nobody types (clicks, what happens by itself) are pages in the same file. A new alias
+  needs a row, or an `also` word on one; `analysis/check_help.py` compares aliases against them.
   `mapwipe` is scoped on `sarea` (the SERVER's area) rather than the canvas, because a tab holds
   folded, stolen and merged rooms from elsewhere, and it never acts without `confirm`
   (`analysis/test_mapwipe.lua`).
