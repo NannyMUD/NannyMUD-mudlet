@@ -1563,9 +1563,16 @@ function elro.compose_spqr_adj(rooms, adj, space)
 
   -- Assemble, then shelf-pack. With no groups every component is its own group.
   local groups
+  -- every room starts on level 0; the packers below lift only the floors they stack
+  elro._vertZ = elro._vertZ or {}
+  for _, c in ipairs(comps) do for _, r in ipairs(c) do elro._vertZ[r] = 0 end end
   if elro.vertPack ~= false then     -- `~= false`: the knob defaults on
     local links
-    groups, links = elro.vert_assemble(comps, lcs, adj, compOf)
+    if elro.vertStack == true then
+      groups, links = elro.vert_stack(comps, lcs, adj, compOf)
+    else
+      groups, links = elro.vert_assemble(comps, lcs, adj, compOf)
+    end
     elro._vertLinks = links   -- read only by elro.draw_vertical; `adj` never sees these
   end
   if not groups then
@@ -1828,12 +1835,15 @@ function elro.write_compose(coord)
       elro._mazePos = elro._mazePos or {}
       elro._mazePos[r] = { p[1] - minx, p[2] - miny }
     else
-      setRoomCoordinates(r, p[1] - minx, p[2] - miny, 0)
+      -- the level the packer gave it: stacked floors, and floors the flat pack declined
+      local z = elro._vertZ and elro._vertZ[r] or 0
+      setRoomCoordinates(r, p[1] - minx, p[2] - miny, z)
     end
   end
   elro.draw_area_stubs(coord)   -- blue cross-area stubs (coords now live)
   elro.draw_demoted(coord)      -- magenta corridors for edges the equations dropped
-  elro.draw_vertical_map(coord) -- ...and teal ones for the up/down links the pack honoured
+  -- ...and teal ones for the up/down links the pack honoured; stacked, Mudlet draws its own
+  if elro.vertStack ~= true then elro.draw_vertical_map(coord) end
   elro.draw_special(coord)      -- ...and dotted grey for typed exits between two rooms here
   elro.draw_residual(coord)     -- ...and red for the ones it kept and drew off-axis
   -- last: terrain loses the highlight arbitration to occluded / maze

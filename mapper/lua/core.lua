@@ -292,37 +292,37 @@ end
 
 -- Cell index: "is any room already standing on this cell?" in O(1). Lets the
 -- auto-relayout fire on the map being WRONG (overlap from onRoom's guess) rather
--- than merely changed. `x * 1000003 + y` is the injective cell key (integer
--- coords, |y| < 500000; z is always 0). Maintenance contract: onRoom's guess
+-- than merely changed. `z * 1e13 + x * 1000003 + y` is the injective cell key (integer
+-- coords, |x|, |y| < 500000, |z| < 400; z is 0 unless floors are stacked). Maintenance contract: onRoom's guess
 -- inserts incrementally; a layout commit moves everything, so write_begin drops
 -- the area's index; cs_reset and relayout's prologue drop the lot.
 elro._cellIx = elro._cellIx or {}     -- areaID -> { [x*1000003+y] = roomId }
 
-local function cell_key(x, y) return x * 1000003 + y end
+local function cell_key(x, y, z) return (z or 0) * 1e13 + x * 1000003 + y end
 
 function elro.cell_index(aid)
   local ix = elro._cellIx[aid]
   if not ix then
     ix = {}
     for _, r in ipairs(elro.cs_area_rooms(aid)) do
-      local x, y = getRoomCoordinates(r)
-      if x then ix[cell_key(x, y)] = r end
+      local x, y, z = getRoomCoordinates(r)
+      if x then ix[cell_key(x, y, z)] = r end
     end
     elro._cellIx[aid] = ix
   end
   return ix
 end
 
--- occupant of (x,y) on this canvas, or nil. The roomExists re-check is cheap and
+-- occupant of (x,y,z) on this canvas, or nil. The roomExists re-check is cheap and
 -- covers an entry left behind by a room deleted without a cs_reset.
-function elro.cell_at(aid, x, y)
-  local r = elro.cell_index(aid)[cell_key(x, y)]
+function elro.cell_at(aid, x, y, z)
+  local r = elro.cell_index(aid)[cell_key(x, y, z)]
   if r and roomExists(r) then return r end
   return nil
 end
 
-function elro.cell_put(aid, x, y, id)
-  elro.cell_index(aid)[cell_key(x, y)] = id
+function elro.cell_put(aid, x, y, id, z)
+  elro.cell_index(aid)[cell_key(x, y, z)] = id
 end
 
 function elro.cell_drop(aid)
@@ -696,17 +696,23 @@ function elro.load_vertpack()
   local ok, s = pcall(getMapUserData, "elro.vertPack")
   if ok and type(s) == "string" and s ~= "" then
     elro.vertPack = (s ~= "off")
+    -- "stack": each floor on its own level, over its stair (vert_stack)
+    elro.vertStack = (s == "stack")
   end
 end
 
-function elro.set_vertpack(on)
-  elro.vertPack = on and true or false
+-- mode: "on" (floors side by side), "stack" (floors on their own levels) or "off"
+function elro.set_vertpack(mode)
+  elro.vertPack = mode ~= "off"
+  elro.vertStack = mode == "stack"
   if type(setMapUserData) == "function" then
-    pcall(setMapUserData, "elro.vertPack", on and "on" or "off")
+    pcall(setMapUserData, "elro.vertPack", mode)
     if type(saveMap) == "function" then pcall(saveMap) end
   end
   cecho(string.format("\n<green>[elro]: vertical packing %s (full relayout)\n<reset>",
-    on and "ON -- up/down links group their floors" or "OFF -- every floor packs on its own"))
+    mode == "stack" and "STACKED -- each floor on its own level, over its stair"
+    or mode == "on" and "ON -- up/down links group their floors side by side"
+    or "OFF -- every floor packs on its own"))
   elro.flush()
 end
 
@@ -2184,7 +2190,7 @@ function elro.guess_reseed()
     if del and roomExists(id) and roomExists(g.from) then
       local fx, fy, fz = getRoomCoordinates(g.from)
       if fx then
-        setRoomCoordinates(id, fx + del[1], fy + del[2], fz)
+        setRoomCoordinates(id, fx + del[1], fy + del[2], fz + (elro.vertStack == true and del[3] or 0))
         elro.cell_drop(getRoomArea(id))
       end
     end
@@ -2684,6 +2690,8 @@ elro.KNOBS = {
                        -- decline, stretch one bridge of the MASS to free the cell and re-run
                        -- the ray search. Gate measured on the mass alone, before the child is
                        -- merged; own trial cap vertRoomTries.
+  "vertDeclineStack",  -- default ON. A floor the flat pack declines goes on its own level over
+                       -- its stair (as `mapvert stack` does) instead of off to the shelf.
 
   -- loop closure / total face area
   "eqWalkLazy",        -- default ON. Defer `:t`/`:sf` seam walks until the probe loops are
@@ -3722,7 +3730,7 @@ function elro.guess_inconsistent(id, aid, skip, only)
   if elro.guessCheck == false then return nil end
   local rec = elro.cs_room(id) ; if not rec then return nil end
   if only and getRoomArea(id) ~= aid then return nil end
-  local px, py = getRoomCoordinates(id) ; if not px then return nil end
+  local px, py, pz = getRoomCoordinates(id) ; if not px then return nil end
   for d, x in elro.exits(rec.ex) do
     if x ~= skip and (not only or x == only) and x ~= id and roomExists(x) and getRoomArea(x) == aid then
       local de = elro.delta[d]
@@ -3733,7 +3741,7 @@ function elro.guess_inconsistent(id, aid, skip, only)
           local hit
           elro.g.seg(px, py, qx, qy, function(cx, cy)
             if hit then return end
-            local occ = elro.cell_at(aid, cx, cy)
+            local occ = elro.cell_at(aid, cx, cy, pz)
             if occ and occ ~= id and occ ~= x then hit = occ end
           end)
           if hit then return "over-room", d, x end
@@ -4268,12 +4276,12 @@ function elro.stub_halo_set()
   if not cur or not roomExists(cur) then return nil end
   local aid = getRoomArea(cur)
   if elro.stub_area_count(aid) < (elro.stubHaloMin or 0) then return nil end
-  local px, py = getRoomCoordinates(cur)
+  local px, py, pz = getRoomCoordinates(cur)
   if not px then return nil end
   local set = {}
   for dx = -n, n do
     for dy = -n, n do
-      local r = elro.cell_at(aid, px + dx, py + dy)
+      local r = elro.cell_at(aid, px + dx, py + dy, pz)
       if r then set[r] = true end
     end
   end
@@ -5130,10 +5138,12 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
           local del = elro.delta[dir]
           if fx and del and not fromUnplaced then
             local gx, gy = fx + del[1], fy + del[2]
+            -- stacked floors: up and down are a level, not the same cell
+            local gz = fz + (elro.vertStack == true and del[3] or 0)
             -- effAid, not fromId's area: collide against the canvas this room lands on
-            local occ = elro.cell_at(effAid, gx, gy)
-            setRoomCoordinates(id, gx, gy, fz)
-            elro.cell_put(effAid, gx, gy, id)
+            local occ = elro.cell_at(effAid, gx, gy, gz)
+            setRoomCoordinates(id, gx, gy, gz)
+            elro.cell_put(effAid, gx, gy, id, gz)
             if occ and occ ~= id then collided = true end
             -- a build in flight will commit coordinates that this guess was measured
             -- against, invalidating it; record it so guess_reseed can re-derive it.

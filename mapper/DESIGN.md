@@ -377,6 +377,28 @@ spanning forest over (components, vertical links): the first link joining two co
 honoured, later ones are drawn only. A bridge piston may stretch one Tarjan bridge after docking
 so a near-miss link draws straight; it is gated on no defect kind getting worse.
 
+**Stacked floors (`mapvert stack`, `elro.vertStack`, `vert_stack`).** The flat dock exists
+because Mudlet's 2D map draws no line for up or down, only a marker, and shows one level at a
+time: side by side, every floor stays visible. Mudlet 5.1's 3D map does draw every up/down
+exit, as a path along the ground, so a floor docked far away (or declined into its own group)
+became a long line across the whole map. Stacked, each floor goes on its own level, counted
+along the same spanning forest (up +1), with its stair room directly over the room it leads
+from. It only has to clear the floors already on its level, with a one-cell margin, so on an
+empty level the stair is always straight; a taken spot slides to the nearest free cell. The
+level is kept beside the coordinates (`elro._vertZ`) and written as z, so nothing between the
+pack and the write had to learn a third coordinate. Everything that looks up cells by position
+(the cell index, the guess on a new room, our overlay lines) now takes z, and in stacked mode a
+new room reached by up or down is guessed one level up or down. Off by default: in 2D a stacked
+area is read one level at a time.
+
+The flat pack uses stacking as its fallback (`vertDeclineStack`, default on): a floor it would
+decline goes on its own level over its stair instead of off to the shelf, where nothing tied it
+to its stair in 2D and the 3D map drew a line across the whole map to it. Beyond such a floor
+every stair changes level, since a flat dock there would be judged against level 0's rooms. A
+stacked floor records positions only, never cells, so it cannot block a flat dock on level 0.
+The census judges each level as its own plane; without that, a floor stacked over level 0
+counted as dozens of collisions (pendant_loop showed 36).
+
 ### Typed exits between rooms of one canvas (render.draw_special)
 
 A recorded special exit (`enter hut`) never enters the layout graph: its source gets a letter

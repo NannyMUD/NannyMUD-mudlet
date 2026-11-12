@@ -346,6 +346,10 @@ out="${1:-$OUT/canary_out.txt}"
 # lying edges of its own. It now refuses any lie key not present before, as the closure's
 # `new_lies` already did: `lie 4 -> 0`. The one crossing left is FORCED (442/457/458/459 form a
 # square with both diagonals as exits); its skew is a separate defect. Process-stable over 3 runs.
+# ⭐ RE-CUT 2026-11-12, `vertDeclineStack` ON: a floor the flat pack declines goes on its own level
+# over its stair instead of off to the shelf, and the census judges each level as its own plane.
+# Two moved, both smaller with no defect worse: dannoc_on cross 104->101, len 665->650, box
+# 32x33->27x33; pendant_loop box 60x18->33x18, hole 23->13.
 for f in lyr titleist rand dannoc_on gore_bug edoras cathbad_lie dagoth pendant_loop plate_lies; do
   printf '%-12s %s\n' "$f" \
     "$(luajit analysis/test_dump_layout.lua "analysis/$f.txt" "$K" 2>&1 | tail -1 | sed 's/^[^ ]*  *[0-9.]*s  *//')" \

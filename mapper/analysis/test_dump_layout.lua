@@ -39,8 +39,8 @@ function setExit(a, b, d) local r = M.rooms[a] ; if r then if b == -1 then r.exi
 function setExitStub() end
 function addSpecialExit() end
 function getSpecialExits() return {} end
-function getRoomCoordinates(id) local r = M.rooms[id] ; if not r then return 0, 0, 0 end return r.x, r.y, 0 end
-function setRoomCoordinates(id, x, y) local r = M.rooms[id] ; if r then r.x, r.y = x, y end end
+function getRoomCoordinates(id) local r = M.rooms[id] ; if not r then return 0, 0, 0 end return r.x, r.y, r.z or 0 end
+function setRoomCoordinates(id, x, y, z) local r = M.rooms[id] ; if r then r.x, r.y, r.z = x, y, z or 0 end end
 function getCustomLines() return {} end
 function removeCustomLine() end
 function addCustomLine() end
@@ -219,6 +219,21 @@ local function run(spec)
   -- reads exactly like a broken dump. world_new.txt (919 rooms + 94 outside stubs = 1013) is the
   -- first corpus dump to cross the default 1000.
   if os.getenv("NSCAP") then elro.ns_cap = tonumber(os.getenv("NSCAP")) end
+  -- VERTSTACK=1 -- `mapvert stack`: a saved setting, not a knob, so a spec cannot reach it
+  elro.vertStack = os.getenv("VERTSTACK") and true or nil
+  -- VERTCOUNT=1 -- add up every pack's honoured and declined stairs, printed after the run
+  if os.getenv("VERTCOUNT") then
+    elro._vcount = { h = 0, d = 0, s = 0 }
+    if not elro._vaReal then elro._vaReal = elro.vert_assemble end
+    elro.vert_assemble = function(...)
+      local g, l = elro._vaReal(...)
+      local st = elro._vertStats or {}
+      elro._vcount.h = elro._vcount.h + (st.honoured or 0)
+      elro._vcount.d = elro._vcount.d + (st.declined or 0)
+      elro._vcount.s = elro._vcount.s + (st.stacked or 0)
+      return g, l
+    end
+  end
   elro.mode = "r"
   elro.engine, elro.engineCache, elro.engineSpace = {}, {}, {}
   elro.bgLayout = false
@@ -240,6 +255,24 @@ local function run(spec)
   elro._wantGroups = os.getenv("SHOWGROUPS") ~= nil
   elro._lastGroups, elro._lastGroupsN = nil, nil
   elro.flush_dirty()
+  if elro._vcount then print(("   vert: %d stair(s) docked, %d declined, %d of those stacked"):format(elro._vcount.h, elro._vcount.d, elro._vcount.s)) end
+  if elro.vertStack or elro._vcount then
+    -- every level used, and any two rooms in one cell on one level
+    local cells, lv, clash = {}, {}, 0
+    for id, r in pairs(M.rooms) do
+      local z = r.z or 0
+      lv[z] = (lv[z] or 0) + 1
+      local k = (r.area or 0) .. ":" .. r.x .. ":" .. r.y .. ":" .. z
+      if cells[k] then clash = clash + 1 end
+      cells[k] = id
+    end
+    local zs = {}
+    for z, n in pairs(lv) do zs[#zs + 1] = z end
+    table.sort(zs)
+    local t = {}
+    for _, z in ipairs(zs) do t[#t + 1] = z .. "=" .. lv[z] end
+    print(("   stacked: rooms per level %s; same-level collisions %d"):format(table.concat(t, " "), clash))
+  end
   if elro._specialDock then
     local s = elro._specialDock
     print(("   special dock: %d pair(s) across groups, %d docked, %d declined; groups %d -> %d"):format(
@@ -371,7 +404,7 @@ local function run(spec)
     elro._bsProbe, elro._bsDiagSkip, elro._bsEmit, elro._bsWhy, elro._bsVoid, elro._bsEmit2d, elro._bsCasc = nil, nil, nil, nil, nil, nil, nil
   end
   local out = {}
-  for _, id in ipairs(ORDER) do out[id] = { M.rooms[id].x, M.rooms[id].y } end
+  for _, id in ipairs(ORDER) do out[id] = { M.rooms[id].x, M.rooms[id].y, M.rooms[id].z or 0 } end
   -- MINLEN audit, from the FINAL coordinates. Deliberately harness-side and independent of the
   -- engine's own bookkeeping: the point is to catch a writer that never consulted `min_len`, so
   -- asking the engine whether it thinks it complied would defeat the check.
@@ -414,7 +447,8 @@ local function census(P)
   end
   local cell, dup = {}, 0
   for _, id in ipairs(ORDER) do
-    local k = P[id][1] .. ":" .. P[id][2]
+    -- a level is its own plane: two rooms collide only on the same one
+    local k = P[id][1] .. ":" .. P[id][2] .. ":" .. (P[id][3] or 0)
     if cell[k] then dup = dup + 1 else cell[k] = id end
   end
   local skew, lie = 0, 0
@@ -492,7 +526,8 @@ local function census(P)
   for i = 1, #edges do
     for j = i + 1, #edges do
       local a, b = edges[i], edges[j]
-      if a[1] ~= b[1] and a[1] ~= b[2] and a[2] ~= b[1] and a[2] ~= b[2] then
+      if a[1] ~= b[1] and a[1] ~= b[2] and a[2] ~= b[1] and a[2] ~= b[2]
+         and (P[a[1]][3] or 0) == (P[b[1]][3] or 0) then
         local p, q, r, s = P[a[1]], P[a[2]], P[b[1]], P[b[2]]
         local function cp(o, u, v) return (u[1]-o[1])*(v[2]-o[2]) - (u[2]-o[2])*(v[1]-o[1]) end
         local d1, d2, d3, d4 = cp(r,s,p), cp(r,s,q), cp(p,q,r), cp(p,q,s)
@@ -541,7 +576,7 @@ local function census(P)
     local p, q = P[e[1]], P[e[2]]
     local dx, dy = q[1] - p[1], q[2] - p[2]
     for _, id in ipairs(ORDER) do
-      if id ~= e[1] and id ~= e[2] then
+      if id ~= e[1] and id ~= e[2] and (P[id][3] or 0) == (p[3] or 0) then
         local x, y = P[id][1], P[id][2]
         if (x - p[1]) * dy - (y - p[2]) * dx == 0
            and x >= math.min(p[1], q[1]) and x <= math.max(p[1], q[1])

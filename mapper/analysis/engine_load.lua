@@ -39,8 +39,8 @@ function setExit(a, b, d) local r = M.rooms[a] ; if r then if b == -1 then r.exi
 function setExitStub() end
 function addSpecialExit() end
 function getSpecialExits() return {} end
-function getRoomCoordinates(id) local r = M.rooms[id] ; if not r then return 0, 0, 0 end return r.x, r.y, 0 end
-function setRoomCoordinates(id, x, y) local r = M.rooms[id] ; if r then r.x, r.y = x, y end end
+function getRoomCoordinates(id) local r = M.rooms[id] ; if not r then return 0, 0, 0 end return r.x, r.y, r.z or 0 end
+function setRoomCoordinates(id, x, y, z) local r = M.rooms[id] ; if r then r.x, r.y, r.z = x, y, z or 0 end end
 function getCustomLines() return {} end
 function removeCustomLine() end
 function addCustomLine() end

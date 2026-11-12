@@ -1010,9 +1010,10 @@ local function vert_makeroom(G, adj, links, hon, lc, comp, foot, u, v, sgn, cap,
   return nil, nTry
 end
 
--- Assembly: components arrive in local coordinates; decide where each sits and return
--- groups for the shelf pack. A declined link leaves its component where it was.
-function elro.vert_assemble(comps, lcs, adj, compOf)
+-- The stair tree both packers share: every vertical link classified, the forest links as a
+-- neighbour list per component, and a BFS order rooted at each tree's largest component, with
+-- the link each component hangs from. Total order throughout, so the layout is deterministic.
+local function vert_forest(comps, compOf)
   local rooms = {}
   for _, c in ipairs(comps) do for _, r in ipairs(c) do rooms[#rooms + 1] = r end end
   table.sort(rooms)
@@ -1028,26 +1029,6 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
       fnb[p.ca][#fnb[p.ca] + 1] = { c = p.cb, p = p }
       fnb[p.cb][#fnb[p.cb] + 1] = { c = p.ca, p = p }
     end
-  end
-  -- No forest link: `nil` tells compose_spqr_adj to shelf-pack bare components. The
-  -- bridge piston still runs over trivial one-component groups (redundant stairs), which
-  -- are arithmetically the same groups the fallback would build.
-  if nforest == 0 then
-    if elro.vertPiston == false then return nil, links end
-    local g, nT, nA = {}, 0, 0
-    for ci = 1, nc do g[ci] = { coord = lcs[ci] } end
-    for gi, G in ipairs(g) do
-      local a1, a2 = vert_piston(G, adj, links, {}, vert_cap(), gi)
-      nT, nA = nT + a1, nA + a2
-    end
-    if nA == 0 then return nil, links end
-    elro.tr(string.format("vert: piston pass (no forest link) -- %d tried, %d applied",
-      nT, nA))
-    -- `_vertStats` is a single global; stamp it on every path that returns groups
-    elro._vertStats = { links = #links, forest = 0, honoured = 0, declined = 0,
-                        carried = 0, comps = nc, groups = #g,
-                        pistTry = nT, pistApp = nA }
-    return g, links
   end
   for i = 1, nc do
     table.sort(fnb[i], function(x, y)
@@ -1092,9 +1073,97 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
     end
   end
 
+  return links, nforest, order, parentOf
+end
+
+-- ---- STACKED FLOORS (elro.vertStack) ----
+-- Each floor on its own level, counted along the stairs (up = +1), placed so its stair room
+-- stands directly over the room it leads from. A floor only has to clear the floors already
+-- on its own level; when its spot is taken it slides to the nearest free one. The level of
+-- every room laid out here is left in elro._vertZ for the write; x and y travel as usual.
+local STACK_REACH = 40        -- how far a floor may slide on its level before it goes beside it
+
+-- every room and edge cell of the floor, with a one-cell margin, clear of its level
+local function stack_free(L, foot, dx, dy)
+  for _, list in ipairs({ foot.cell, foot.ecell }) do
+    for i = 1, #list do
+      local x, y = list[i][1] + dx, list[i][2] + dy
+      for ox = -1, 1 do
+        for oy = -1, 1 do
+          if L[(x + ox) .. ":" .. (y + oy)] then return false end
+        end
+      end
+    end
+  end
+  return true
+end
+
+local function stack_mark(L, foot, dx, dy)
+  for _, list in ipairs({ foot.cell, foot.ecell }) do
+    for i = 1, #list do L[(list[i][1] + dx) .. ":" .. (list[i][2] + dy)] = true end
+  end
+end
+
+-- the free spot nearest (tx, ty): smallest ring, then nearest by distance, then a fixed order
+local function stack_spot(L, foot, tx, ty)
+  for r = 0, STACK_REACH do
+    local best, bd
+    for ox = -r, r do
+      for oy = -r, r do
+        if math.max(math.abs(ox), math.abs(oy)) == r then
+          local d = ox * ox + oy * oy
+          if (not bd or d < bd) and stack_free(L, foot, tx + ox, ty + oy) then best, bd = { tx + ox, ty + oy }, d end
+        end
+      end
+    end
+    if best then return best[1], best[2], r end
+  end
+  -- nothing near: beside everything already on the level
+  local maxx
+  for k in pairs(L) do
+    local x = tonumber(k:match("^(-?%d+)"))
+    if not maxx or x > maxx then maxx = x end
+  end
+  return (maxx or tx) + 2 - foot.minx, ty, STACK_REACH + 1
+end
+
+-- Assembly: components arrive in local coordinates; decide where each sits and return
+-- groups for the shelf pack. A declined link leaves its component where it was.
+function elro.vert_assemble(comps, lcs, adj, compOf)
+  local links, nforest, order, parentOf = vert_forest(comps, compOf)
+  elro._vertZ = elro._vertZ or {}
+  local nc = #comps
+  -- No forest link: `nil` tells compose_spqr_adj to shelf-pack bare components. The
+  -- bridge piston still runs over trivial one-component groups (redundant stairs), which
+  -- are arithmetically the same groups the fallback would build.
+  if nforest == 0 then
+    if elro.vertPiston == false then return nil, links end
+    local g, nT, nA = {}, 0, 0
+    for ci = 1, nc do g[ci] = { coord = lcs[ci] } end
+    for gi, G in ipairs(g) do
+      local a1, a2 = vert_piston(G, adj, links, {}, vert_cap(), gi)
+      nT, nA = nT + a1, nA + a2
+    end
+    if nA == 0 then return nil, links end
+    elro.tr(string.format("vert: piston pass (no forest link) -- %d tried, %d applied",
+      nT, nA))
+    -- `_vertStats` is a single global; stamp it on every path that returns groups
+    elro._vertStats = { links = #links, forest = 0, honoured = 0, declined = 0,
+                        carried = 0, comps = nc, groups = #g,
+                        pistTry = nT, pistApp = nA }
+    return g, links
+  end
   local cap = vert_cap()
   local feet, groups, placedIn = {}, {}, {}
   local hon, dec = {}, {}
+  -- the level each floor ends up on, and each group's cells per level (vertDeclineStack)
+  local zOf, levels, nStacked = {}, {}, 0
+  local function place_level(ci, gi, z, dx, dy)
+    zOf[ci] = z
+    levels[gi] = levels[gi] or {}
+    levels[gi][z] = levels[gi][z] or {}
+    stack_mark(levels[gi][z], feet[ci], dx, dy)
+  end
   -- Shaft carry: `dockRay/dockScale[ci]` is what this component was docked with; its
   -- children prefer the same ray. Carried across the tree edge deliberately, so two
   -- stairs leaving one floor draw parallel.
@@ -1104,7 +1173,10 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
     local lc = lcs[ci]
     feet[ci] = vert_foot(comps[ci], lc, adj)
     local par, docked = parentOf[ci], false
-    if par and placedIn[par.c] then
+    -- beyond a floor already off level 0 every stair changes level, as when stacked
+    local offPlane = par and placedIn[par.c] and elro.vertDeclineStack ~= false
+                     and (zOf[par.c] or 0) ~= 0
+    if par and placedIn[par.c] and not offPlane then
       local G, p = groups[placedIn[par.c]], par.p
       -- v is this component's end of the link, u the already-placed one
       local v, u
@@ -1130,6 +1202,7 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
                     .. (G.coord[u][2] + sgn * o[2] * j)] = true
           end
           placedIn[ci] = placedIn[par.c] ; docked = true
+          place_level(ci, placedIn[ci], zOf[par.c] or 0, best.dx, best.dy)
           dockRay[ci], dockScale[ci] = best.oi, best.k
           -- charge the ray only if this dock chose it (fan-out term)
           if not best.carry then G.rayUse[best.oi] = (G.rayUse[best.oi] or 0) + 1 end
@@ -1151,7 +1224,7 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
     end
     if not docked then
       -- Decline: the component starts its own group; its children may still dock onto it.
-      if par then
+      if par and not offPlane then
         dec[#dec + 1] = par.p
         local why, ndead = "?", 0
         local G0 = groups[placedIn[par.c]]
@@ -1177,9 +1250,32 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
                 .. " only vertOverRoom can"
             or ""))
       end
-      groups[#groups + 1] = vert_group(comps[ci], lc, feet[ci])
-      placedIn[ci] = #groups
+      local G = par and elro.vertDeclineStack ~= false and groups[placedIn[par.c]]
+      local p = par and par.p
+      local v = p and ((p.ca == ci) and p.a or p.b)
+      local u = p and ((p.ca == ci) and p.b or p.a)
+      if G and G.coord[u] and lc[v] then
+        local gi = placedIn[par.c]
+        local z = (zOf[par.c] or 0) + ((vert_high(p) == v) and 1 or -1)
+        levels[gi] = levels[gi] or {}
+        local dx, dy = stack_spot(levels[gi][z] or {}, feet[ci],
+                                  G.coord[u][1] - lc[v][1], G.coord[u][2] - lc[v][2])
+        -- positions only: on another level it must not block the flat docks on level 0
+        for _, r in ipairs(comps[ci]) do
+          local q = lc[r]
+          if q then G.coord[r] = { q[1] + dx, q[2] + dy } end
+        end
+        placedIn[ci] = gi
+        place_level(ci, gi, z, dx, dy)
+        p.stacked = true ; nStacked = nStacked + 1
+        elro.tr(string.format("vert: STACKED comp %d on level %d instead", ci, z))
+      else
+        groups[#groups + 1] = vert_group(comps[ci], lc, feet[ci])
+        placedIn[ci] = #groups
+        place_level(ci, #groups, 0, 0, 0)
+      end
     end
+    for _, r in ipairs(comps[ci]) do elro._vertZ[r] = zOf[ci] or 0 end
   end
 
   -- Bridge piston after every dock. It rewrites `G.coord` only; `G.cell/ecell/seg` are
@@ -1205,7 +1301,7 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
                       honoured = #hon, declined = #dec, carried = nCarry,
                       comps = nc, groups = #groups,
                       pistTry = nPistTry, pistApp = nPistApp,
-                      roomTry = nRoomTry, roomApp = nRoomApp }
+                      roomTry = nRoomTry, roomApp = nRoomApp, stacked = nStacked }
   local nc2 = { redundant = 0, cycle = 0, cross = 0 }
   for _, p in ipairs(links) do
     if nc2[p.cls] then nc2[p.cls] = nc2[p.cls] + 1 end
@@ -1215,6 +1311,50 @@ function elro.vert_assemble(comps, lcs, adj, compOf)
     .. " %d component(s) packed as %d group(s)",
     #links, nforest, nc2.cycle, nc2.redundant, nc2.cross,
     #hon, nCarry, #dec, nc, #groups))
+  return groups, links
+end
+
+
+function elro.vert_stack(comps, lcs, adj, compOf)
+  local links, nforest, order, parentOf = vert_forest(comps, compOf)
+  elro._vertZ = elro._vertZ or {}
+  local zOf, groupOf, groups, levels = {}, {}, {}, {}
+  local hon, slid = 0, 0
+  for _, ci in ipairs(order) do
+    local lc = lcs[ci]
+    local foot = vert_foot(comps[ci], lc, adj)
+    local par = parentOf[ci]
+    local G, z, tx, ty
+    if par and groupOf[par.c] then
+      G = groupOf[par.c]
+      local p = par.p
+      local v = (p.ca == ci) and p.a or p.b
+      local u = (p.ca == ci) and p.b or p.a
+      z = zOf[par.c] + ((vert_high(p) == v) and 1 or -1)
+      tx, ty = G.coord[u][1] - lc[v][1], G.coord[u][2] - lc[v][2]
+    else
+      G = { coord = {} }
+      groups[#groups + 1] = G
+      levels[G] = {}
+      z, tx, ty = 0, 0, 0
+    end
+    local L = levels[G][z] or {}
+    levels[G][z] = L
+    local dx, dy, r = stack_spot(L, foot, tx, ty)
+    if par then
+      if r == 0 then par.p.honoured = true ; hon = hon + 1 else slid = slid + 1 end
+    end
+    stack_mark(L, foot, dx, dy)
+    groupOf[ci], zOf[ci] = G, z
+    for _, room in ipairs(comps[ci]) do
+      local q = lc[room]
+      if q then G.coord[room] = { q[1] + dx, q[2] + dy } ; elro._vertZ[room] = z end
+    end
+  end
+  elro._vertStats = { links = #links, forest = nforest, honoured = hon, declined = slid,
+                      carried = 0, comps = #comps, groups = #groups, stacked = true }
+  elro.tr(string.format("vert: stacked %d floor(s) in %d group(s) -- %d stair(s) straight up,"
+    .. " %d floor(s) slid aside on their level", #comps, #groups, hon, slid))
   return groups, links
 end
 
@@ -1301,10 +1441,10 @@ local VERT_ORD = { forest = 1, cycle = 2, redundant = 3, cross = 4 }
 -- mapvert [area] -- one area in full detail
 function elro.vert_report(spec)
   spec = tostring(spec or ""):gsub("^%s+", ""):gsub("%s+$", "")
-  -- `mapvert on|off` sets the preference; anything else is an area filter. An area
-  -- literally named "on"/"off" would be unreachable, but `mapvert` takes a substring.
+  -- `mapvert on|stack|off` sets the preference; anything else is an area filter. An area
+  -- literally named "on"/"stack"/"off" would be unreachable, but `mapvert` takes a substring.
   local w = spec:lower()
-  if w == "on" or w == "off" then return elro.set_vertpack(w == "on") end
+  if w == "on" or w == "off" or w == "stack" then return elro.set_vertpack(w) end
   if spec:lower() == "all" then return elro.vert_report_all() end
   local aid
   if spec ~= "" then
@@ -1479,7 +1619,8 @@ function elro.draw_vertical(coord, sink)
     local b = (p.a == a) and p.b or p.a
     -- _vertLinks is a single global: skip links from another canvas or (under mapstep) a
     -- floor not yet docked in this frame. A typed link is draw_special's: grey and dotted.
-    if not p.typed and coord[a] and coord[b] and roomExists(a) and roomExists(b) then
+    -- a stair whose floor went on its own level is Mudlet's to draw, as when stacked
+    if not p.typed and not p.stacked and coord[a] and coord[b] and roomExists(a) and roomExists(b) then
       local ax, ay = getRoomCoordinates(a)
       local bx, by = getRoomCoordinates(b)
       if ax and bx and (ax ~= bx or ay ~= by) then

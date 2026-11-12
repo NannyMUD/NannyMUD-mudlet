@@ -46,6 +46,9 @@
 
 package.path = "analysis/?.lua;" .. package.path
 dofile("analysis/engine_load.lua")
+-- the flat pack on its own: a declined floor stays in its own group (test_vertstack covers
+-- vertDeclineStack, which puts it on its own level instead)
+elro.vertDeclineStack = false
 
 local fail, ntest = 0, 0
 local function ok(cond, what)

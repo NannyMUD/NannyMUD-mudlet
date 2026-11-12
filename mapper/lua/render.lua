@@ -628,7 +628,7 @@ function elro.draw_area_stubs(roomMap)
      or type(getRoomCoordinates) ~= "function" then return end
   for r in pairs(roomMap) do
     if roomExists(r) then
-      local rx, ry = getRoomCoordinates(r)
+      local rx, ry, rz = getRoomCoordinates(r)
       if rx then
         local ra = getRoomArea(r)
         -- An exit the server will not map beyond is linked to the placeholder room
@@ -665,7 +665,7 @@ function elro.draw_area_stubs(roomMap)
             if dest == elro.FRONTIER_ROOM then
               -- an unexplored exit: a short grey line, no arrowhead (a stub's look)
               local f = elro.FRONTIER_LEN or 0.3
-              pcall(addCustomLine, r, { { rx, ry, 0 }, { rx + del[1] * f, ry + del[2] * f, 0 } }, d,
+              pcall(addCustomLine, r, { { rx, ry, rz }, { rx + del[1] * f, ry + del[2] * f, rz } }, d,
                     "solid line", elro.FRONTIER_COL, false)
             elseif vp then
               -- Three points, always. The middle one is half a cell along the door's
@@ -674,10 +674,10 @@ function elro.draw_area_stubs(roomMap)
               -- satisfy this door the midpoint is collinear and the kink vanishes, so
               -- a straight spoke means "truthful" without needing a second style.
               pcall(addCustomLine, r,
-                { { rx, ry, 0 }, { hx, hy, 0 }, { vp[1], vp[2], 0 } }, d,
+                { { rx, ry, rz }, { hx, hy, rz }, { vp[1], vp[2], rz } }, d,
                 "dash line", col, true)
             else
-              pcall(addCustomLine, r, { { rx, ry, 0 }, { hx, hy, 0 } }, d,
+              pcall(addCustomLine, r, { { rx, ry, rz }, { hx, hy, rz } }, d,
                 "solid line", col, true)
             end
           end
@@ -790,8 +790,8 @@ function elro.draw_demoted(coord)
   for _, e in ipairs(dem) do
     local a, b, d = e.r, e.x, e.d
     if coord[a] and coord[b] and roomExists(a) and roomExists(b) then
-      local ax, ay = getRoomCoordinates(a)
-      local bx, by = getRoomCoordinates(b)
+      local ax, ay, az = getRoomCoordinates(a)
+      local bx, by, bz = getRoomCoordinates(b)
       local va = elro.delta[d]
       -- Only mark a demoted edge the drawing actually gets wrong (demotion is about the
       -- equations, this is about the drawing). elro.demotedMarkAll marks every one.
@@ -812,9 +812,9 @@ function elro.draw_demoted(coord)
         if e.noDraw and elro.demotedSpikes then
           -- short spike with no target end: a teleport has no geometry worth asserting
           local ts = TUNE.trapSpike
-          pts = { { ax, ay, 0 }, { ax + va[1] * ts, ay + va[2] * ts, 0 } }
+          pts = { { ax, ay, az }, { ax + va[1] * ts, ay + va[2] * ts, az } }
         else
-          pts = { { ax + va[1] * st, ay + va[2] * st, 0 }, { bx, by, 0 } }
+          pts = { { ax + va[1] * st, ay + va[2] * st, az }, { bx, by, bz } }
           -- bow around an intervening room on whichever side is clear, else stay straight
           local blk = blocked_by(pts[1][1], pts[1][2], bx, by, a, b)
           if blk then
@@ -830,7 +830,7 @@ function elro.draw_demoted(coord)
                 local px, py = mx + nx * sgn, my + ny * sgn
                 if not blocked_by(pts[1][1], pts[1][2], px, py, a, b)
                    and not blocked_by(px, py, bx, by, a, b) then
-                  pts = { pts[1], { px, py, 0 }, { bx, by, 0 } } ; break
+                  pts = { pts[1], { px, py, az }, { bx, by, bz } } ; break
                 end
               end
             end
@@ -923,12 +923,12 @@ function elro.draw_residual(coord)
   -- the edge is truthful and only needs recolouring (yellow).
   local function mark(a, b, d, de, col, fromStub)
     if taken[a .. ":" .. elro.shortDir(d)] then return false end
-    local ax, ay = getRoomCoordinates(a)
-    local bx, by = getRoomCoordinates(b)
+    local ax, ay, az = getRoomCoordinates(a)
+    local bx, by, bz = getRoomCoordinates(b)
     if not (ax and bx) then return false end
     local pts = fromStub
-      and { { ax + de[1] * st, ay + de[2] * st, 0 }, { bx, by, 0 } }
-      or  { { ax, ay, 0 }, { bx, by, 0 } }
+      and { { ax + de[1] * st, ay + de[2] * st, az }, { bx, by, bz } }
+      or  { { ax, ay, az }, { bx, by, bz } }
     pcall(addCustomLine, a, pts, elro.shortDir(d),
           two_way(a, b) and "solid line" or "dash line", col, false)
     taken[a .. ":" .. elro.shortDir(d)] = true
@@ -1194,12 +1194,12 @@ local function step_hide_exits(shown)
     if roomExists(room) then
       local ex = getRoomExits(room)
       if type(ex) == "table" then
-        local rx, ry = getRoomCoordinates(room)
+        local rx, ry, rz = getRoomCoordinates(room)
         if rx then
           for dir, dest in pairs(ex) do
             if not shown[dest] then
               -- zero-length line at the room -> nothing drawn, but the auto exit line is overridden
-              pcall(addCustomLine, room, { { rx, ry, 0 }, { rx, ry, 0 } }, dir, "solid line", { 0, 0, 0 }, false)
+              pcall(addCustomLine, room, { { rx, ry, rz }, { rx, ry, rz } }, dir, "solid line", { 0, 0, 0 }, false)
               elro._stepHideLines[#elro._stepHideLines + 1] = { room = room, dir = dir }
             end
           end

@@ -160,7 +160,7 @@ In Mudlet, `maphelp` lists these, `maphelp <command>` shows one in full and `map
 - **`mapterrain [on|off]`** Colour rooms by terrain; 'maplegend' says which colour is what.
 - **`mapglyphs [on|off]`** A letter on rooms with an exit you type instead of a direction.
 - **`mapstubs [on|off|edges|classic|halo N]`** What the map draws for unexplored exits. Mudlet redraws every stub of its own every frame, so a big part-explored area is slow. 'edges' draws each unexplored exit as a short line instead, which is far cheaper; 'classic' is Mudlet's stubs with a halo, showing only the stubs within N cells of you once an area has a lot. Nothing is lost either way.
-- **`mapvert [on|off]`** Dock up and down exits as separate floors. Remembered.
+- **`mapvert [on|stack|off]`** 'on' docks each floor beside the one it connects to, so every floor shows at once; a floor with no room beside its stair goes on its own level over it instead, and so does anything beyond it. 'stack' puts each floor on its own level, directly over or under its stair: right for Mudlet's 3D map, where up and down then stand upright instead of running across the map; in the 2D map you see one level at a time. 'off' places every floor on its own. Remembered.
 - **`mapareamin <n>`** The smallest cluster of rooms that keeps an area of its own instead of folding into the world map. Remembered.
 
 ## Advanced commands
