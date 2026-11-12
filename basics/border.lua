@@ -17,10 +17,11 @@
 -- whatever the load order; an older copy loading later changes nothing. So the shared API may
 -- only grow: B.slot, park, move, remove, where, parked_cell, total, edge_of, cells, set_title,
 -- set_hint, clear_width, is_dragging, reset, suspend, resume, is_suspended, save_state, close,
--- open, is_closed, claim_screen, and the MudletBordersChanged event. Raise REV with every
+-- open, is_closed, claim_screen, drag_pane, drag_end, popup, and the MudletBordersChanged event.
+-- A slot's spec may also carry menu (extra right-click items) and on_drop. Raise REV with every
 -- change; a break needs a new global name.
 
-local REV = 4
+local REV = 5
 MudletBorders = MudletBorders or {}
 local B = MudletBorders
 if (B.REV or 0) > REV then return B end
@@ -689,6 +690,18 @@ function B.drag_start(hid)
     B._dragTimer = tempTimer(0.03, function() B.drag_move() end, true)
   end
 end
+-- Drag pane `id` as if by its strip, from a press on the owner's own widget (a tab pulled out of
+-- a tab bar). Qt sends the release to the widget pressed, so the owner calls drag_end from it.
+function B.drag_pane(id)
+  local mx, my = mouse()
+  if not mx or not B.slots[id] then return end
+  B._drag = { kind = "pane", id = id, sx = mx, sy = my, moved = true }
+  B._dragging = true
+  if type(tempTimer) == "function" then
+    if B._dragTimer then pcall(killTimer, B._dragTimer) end
+    B._dragTimer = tempTimer(0.03, function() B.drag_move() end, true)
+  end
+end
 function B.drag_move()
   local d = B._drag
   if not d then return end
@@ -749,6 +762,12 @@ function B.drag_end()
   end
   hide_ov()
   B._drag, B._dragging = nil, false
+  -- the pane's owner may take the drop itself (a chat tab dropped back onto its chat)
+  local s = d.kind == "pane" and B.slots[d.id]
+  local mx, my = mouse()
+  if s and s.on_drop and d.moved and not d.cancel and mx and s.on_drop(mx, my) then
+    B.apply() ; save_state() ; return
+  end
   if d and d.kind == "pane" and d.moved and d.target and not d.cancel then drop(d.id, d.target) end
   B.apply()
   save_state()
@@ -791,6 +810,7 @@ end
 function B.menu(id)
   local items = {}
   local s = id and B.slots[id]
+  for _, it in ipairs(s and s.menu or {}) do items[#items + 1] = it end
   if s and s.on_hide and not B.closed[id] then
     items[#items + 1] = { "Hide " .. short(s), function() B.close(id) end }
   end
@@ -801,6 +821,11 @@ function B.menu(id)
     items[#items + 1] = { "Show " .. short(B.slots[cid]), function() B.open(cid) end }
   end
   items[#items + 1] = { "Reset layout", function() B.reset() end }
+  B.popup(items)
+end
+-- a menu of { label, action } at the pointer, in the same look; it closes on a pick or a moment
+-- after the pointer leaves
+function B.popup(items)
   local mx, my = mouse()
   if not mx then return end
   local W, H = win_size()
@@ -846,6 +871,7 @@ function B.slot(id, spec)
   s.order = tonumber(spec.order) or 0
   s.title = spec.title
   s.on_hide = spec.on_hide
+  s.menu, s.on_drop = spec.menu, spec.on_drop
   if spec.cb then s.cb = spec.cb end
   if B.closed[id] then
     if spec.cell ~= nil then s.defCell = spec.cell end
