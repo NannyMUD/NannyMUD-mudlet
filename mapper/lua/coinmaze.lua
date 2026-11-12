@@ -530,7 +530,7 @@ local function prompt_once()
   if t.look then
     if not t.first then say("could not read the room's name. Try 'mapcoins on <room name>'.") ; elro.coins_off() return end
     C.name = t.first
-    say("coin maze ON for rooms called '" .. C.name .. "'. Walk; an empty room gets coins. 'mapcoins off' stops.")
+    say("coin maze ON for rooms called '" .. C.name .. "'. Walk; an empty room gets coins. 'mapcoins off' stops. (Experimental.)")
     return
   end
   -- no room of the maze's name was shown: out of the maze if the game named a real room this
@@ -667,7 +667,7 @@ local function coins_on(name)
   C.sendH = registerAnonymousEventHandler("sysDataSendRequest", function(_, text) elro.coins_sent(text) end)
   if name then
     C.name = name
-    say("coin maze ON for rooms called '" .. name .. "'. Walk; an empty room gets coins. 'mapcoins off' stops.")
+    say("coin maze ON for rooms called '" .. name .. "'. Walk; an empty room gets coins. 'mapcoins off' stops. (Experimental.)")
   else
     -- the first line of a look is the room's name
     C.looking = true
