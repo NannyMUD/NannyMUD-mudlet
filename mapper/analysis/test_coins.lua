@@ -356,6 +356,15 @@ drain() ; sent = {}
 turn("forward", cave("In front of you is a cave wall."))
 eq(sent[1] ~= nil and sent[1] ~= "drop " .. c1, true, "...so a new room never gets a number already lying somewhere: " .. tostring(sent[1]))
 
+-- the coins gone: told where you are, the rest is followed on the map
+local c2 = K.at
+eq(K.edges[c1].south, c2, "(south from c1 was walked)")
+elro.cmd_coins("at " .. c1 .. " south")
+eq(K.at == c1 and K.heading == "south" and K.reckon, true, "'at <n> <facing>' puts you there")
+drain() ; sent = {}
+turn("forward", cave("In front of you is a cave wall."))
+eq(K.at == c2 and #sent == 0, true, "a room with no coins is the one the map says, and none are dropped")
+
 -- two-way: the way back is behind you, after a curve too; a pair is one line with no arrow
 elro.cmd_coins("reset")
 elro.cmd_coins("on A dark room.")
@@ -376,6 +385,27 @@ turn("back", { "You walk into a wall." })
 eq(K.edges[p].south == nil and K.walls[p].south == true, true, "a wall where two-way guessed a way back replaces the guess")
 elro.cmd_coins("twoway off")
 eq(K.twoway, false, "'twoway off' switches it off")
+
+-- a maze where back steps away without turning you
+elro.cmd_coins("reset")
+elro.cmd_coins("on A dark room.")
+elro.cmd_coins("back stay")
+elro.cmd_coins("twoway on")
+K = elro.coins
+turn("forward", cave("In front of you is a straight passage."))
+local b1 = K.at
+turn("forward", cave("In front of you is a straight passage."))
+local b2 = K.at
+turn("back", cave("In front of you is a straight passage.", b1 .. " gold coin" .. (b1 == 1 and "" or "s") .. "."))
+eq(K.at == b1 and K.heading == "north", true, "back stay: back to the room before, still facing north: " .. tostring(K.heading))
+eq(K.edges[b2].south, b1, "...back from facing north is south")
+eq(K.edges[b1].north, b2, "...and two-way puts the way back in front")
+turn("back", cave("In front of you is a straight passage."))
+eq(K.edges[b1].south ~= nil and K.heading == "north", true, "back again goes on south, facing north")
+elro.cmd_coins("back turn")
+turn("back", cave("In front of you is a straight passage.", b1 .. " gold coin" .. (b1 == 1 and "" or "s") .. "."))
+eq(K.at == b1 and K.heading == "south", true, "back turn: back faces you round again")
+elro.cmd_coins("twoway off")
 
 -- go: a step at a time to the nearest room with an untested way, in the words you move with
 elro.cmd_coins("reset")

@@ -13,7 +13,16 @@ C.other = C.other or {}                     -- room -> dir -> what it showed tha
 C.q = C.q or {}
 C.desc = C.desc or {}                       -- room -> dir -> what the room said lies that way
 
-local WALL = "You cannot go that way."
+-- How mazes word things. A maze worded some other way gets its phrases added here, not new code.
+local WORDS = {
+  -- a whole line that means the move went nowhere
+  wall = { ["You cannot go that way."] = true, ["What?"] = true, ["You walk into a wall."] = true },
+  -- a relative room telling what lies at each side; behind is never told
+  sides = { { "in front of you", 0 }, { "to your right", 1 }, { "to your left", 3 } },
+  closed = { "wall" },                      -- a side worded with one of these is no way
+  bend = { { "curving to the left", 3 }, { "curving left", 3 }, { "curving to the right", 1 }, { "curving right", 1 } },
+}
+local UNKNOWN = "What?"
 
 -- A blocked maze names no exits, so the ways to try are the four compass points plus any other
 -- direction that has taken someone from one room of the maze to another.
@@ -275,29 +284,46 @@ local COMPASS = { "north", "east", "south", "west" }
 local COMPASS_I = { north = 0, east = 1, south = 2, west = 3 }
 local function turn_to(h, k) return COMPASS[(COMPASS_I[h or "north"] + k) % 4 + 1] end
 
--- the text after "to your right" and the like, up to the next one or the sentence's end
+-- the text after one side's words, up to the next side's or the sentence's end
 local function segment(text, label)
   local _, j = text:find(label, 1, true)
   if not j then return nil end
   local rest = text:sub(j + 1)
   local cut = #rest + 1
-  for _, stop in ipairs({ ", to your", " and to your", "." }) do
-    local k = rest:find(stop, 1, true)
-    if k and k < cut then cut = k end
+  local k = rest:find(".", 1, true)
+  if k then cut = k end
+  for _, s in ipairs(WORDS.sides) do
+    for _, pre in ipairs({ ", ", " and " }) do
+      k = rest:find(pre .. s[1], 1, true)
+      if k and k < cut then cut = k end
+    end
   end
   return rest:sub(1, cut - 1)
 end
 
--- A room that says what is in front, right and left: a wall where it says so or says nothing,
+local function is_closed(seg)
+  for _, w in ipairs(WORDS.closed) do if seg:find(w, 1, true) then return true end end
+  return false
+end
+
+-- true when the text tells the sides: it names the first one
+local function tells_sides(text) return text:find(WORDS.sides[1][1], 1, true) ~= nil end
+
+-- the turn a passage's words give the one who walks it
+local function bend_of(seg)
+  for _, b in ipairs(WORDS.bend) do if seg:find(b[1], 1, true) then return b[2] end end
+  return 0
+end
+
+-- A room that says what lies at its sides: a wall where it says so or says nothing,
 -- a way to try where it names one. Behind is never told.
-local SIDES = { { "in front of you", 0 }, { "to your right", 1 }, { "to your left", 3 } }
 local function note_sides(n, text, h)
   text = (text or ""):lower()
-  if not text:find("in front of you", 1, true) then return end
-  for _, s in ipairs(SIDES) do
+  if not tells_sides(text) then return end
+  for _, s in ipairs(WORDS.sides) do
     local seg = segment(text, s[1])
     local d = turn_to(h, s[2])
-    if seg and not seg:find("wall", 1, true) then
+    if seg and not is_closed(seg) then
       if C.walls[n] then C.walls[n][d] = nil end
       C.desc[n] = C.desc[n] or {}
       C.desc[n][d] = seg
@@ -314,14 +340,14 @@ end
 -- same from both ends, and behind is never told, so a mere better fit proves nothing.
 local function facing_from_text(n, text)
   text = (text or ""):lower()
-  if not C.desc[n] or not text:find("in front of you", 1, true) then return nil end
+  if not C.desc[n] or not tells_sides(text) then return nil end
   local score = {}
-  for i, h in ipairs(COMPASS) do
+  for _, h in ipairs(COMPASS) do
     local s = 0
-    for _, side in ipairs(SIDES) do
+    for _, side in ipairs(WORDS.sides) do
       local seg = segment(text, side[1])
       local known = C.desc[n][turn_to(h, side[2])]
-      local open = seg and not seg:find("wall", 1, true)
+      local open = seg and not is_closed(seg)
       if known then s = s + ((open and seg == known) and 1 or -1) end
     end
     score[h] = s
@@ -367,8 +393,7 @@ function elro.coins_line(l)
   if t.look then return end
   if t.name then t.text = (t.text or "") .. " " .. l end
   if l == C.name then t.name = true end
-  -- a room with no such exit has no such verb, so some mazes answer "What?"
-  if l == WALL or l == "What?" or l == "You walk into a wall." then t.wall = true end
+  if WORDS.wall[l] then t.wall = true end
   local n = tonumber(l:match("^(%d+) gold coins?%.$"))
   if n and not t.coins then t.coins = n end
 end
@@ -484,12 +509,15 @@ local function walk_next()
   own_send(cmd)
 end
 
+-- a relative move leaves you facing the way you went, except a step back where back keeps the facing
+local function turns(t) return t.rel ~= nil and not (t.rel == REL.back and C.backStays) end
+
 local function prompt_once()
   local t = table.remove(C.q, 1)
   if not t or not (t.dir or t.rel or t.look or t.turn) then return end
   if t.turn then
     -- turned on the spot unless the game did not know the command
-    if t.first and t.first ~= "What?" then
+    if t.first and t.first ~= UNKNOWN then
       C.heading = turn_to(C.heading, t.turn)
       if C.at then note_sides(C.at, t.text or t.first, C.heading) ; refresh_stubs() end
       C.relSeen = true
@@ -532,7 +560,7 @@ local function prompt_once()
       maze_echo(string.format("%s from %d showed '%s': not numbered, position unknown until the next room",
                 t.dir, C.at, t.first))
       C.at, C.lostSaid = nil, true
-      if t.rel then C.heading = t.dir end
+      if turns(t) then C.heading = t.dir end
       refresh_stubs()
     elseif not C.at and not C.lostSaid then
       C.lostSaid = true
@@ -542,16 +570,18 @@ local function prompt_once()
     return
   end
   C.lostSaid = nil
-  if t.rel then
-    -- a passage described as curving turns you while you walk it
-    local seg = C.at and C.desc[C.at] and C.desc[C.at][t.dir] or ""
-    C.heading = turn_to(t.dir, seg:find("curving to the left", 1, true) and 3
-                                or seg:find("curving to the right", 1, true) and 1 or 0)
+  if turns(t) then
+    -- a passage described as bending turns you while you walk it
+    C.heading = turn_to(t.dir, bend_of(C.at and C.desc[C.at] and C.desc[C.at][t.dir] or ""))
   end
   local prev, msg = C.at, nil
   if t.coins then
     C.used[t.coins] = true ; C.at = t.coins
     msg = string.format("room %d", t.coins)
+  elseif C.reckon and prev and C.edges[prev] and C.edges[prev][t.dir] then
+    -- no coins to read: a maze that stays put is followed on its own map
+    C.at = C.edges[prev][t.dir]
+    msg = string.format("room %d, by the map", C.at)
   elseif #C.q > 0 then
     -- coins sent now would land wherever the command in flight takes the player
     C.at = nil
@@ -590,7 +620,7 @@ local function prompt_once()
   -- two-way: the way back is behind you, unless something was seen there already
   local rev
   if C.twoway and prev and prev ~= C.at then
-    rev = t.rel and elro.reverse[C.heading] or elro.reverse[t.dir]
+    rev = turns(t) and elro.reverse[C.heading] or elro.reverse[t.dir]
     local here = C.at
     if rev and not (C.edges[here] and C.edges[here][rev]) and not (C.walls[here] and C.walls[here][rev])
        and not (C.other[here] and C.other[here][rev]) then
@@ -631,7 +661,7 @@ end
 
 local function coins_on(name)
   kill_hooks()
-  C.on, C.q, C.at, C.lostSaid, C.heading, C.relSeen = true, {}, nil, nil, "north", nil
+  C.on, C.q, C.at, C.lostSaid, C.heading, C.relSeen, C.reckon = true, {}, nil, nil, "north", nil, nil
   C.lineT = tempRegexTrigger("^", function() elro.coins_line(line) end)
   C.promptT = tempPromptTrigger(function() elro.coins_prompt() end)
   C.sendH = registerAnonymousEventHandler("sysDataSendRequest", function(_, text) elro.coins_sent(text) end)
@@ -690,10 +720,11 @@ local function list()
   cecho("  Map lines leave a room the way you walked: <yellow>north<reset> <cyan>east<reset> <magenta>south<reset> <green>west<reset>; the arrow marks where it led."
         .. " A grey line joins two rooms both ways.\n")
   if C.twoway then cecho("  Two-way is on: a way walked is taken to lead back.\n") end
+  if C.backStays then cecho("  Back keeps your facing.\n") end
   if C.at then cecho(string.format("  You are in room %d, facing %s.\n", C.at, C.heading or "north")) end
 end
 
--- mapcoins [on [room name] | off | reset | twoway [on|off]]
+-- mapcoins [on [room name] | off | reset | relearn | go [n] | at <n> [facing] | layout | twoway [on|off] | back [turn|stay]]
 function elro.cmd_coins(arg)
   arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local name = arg:match("^on%s+(.+)$")
@@ -704,7 +735,7 @@ function elro.cmd_coins(arg)
     elro.coins_off()
     say("coin maze off. Its map stays until 'mapcoins reset' or the next start.")
   elseif arg == "reset" then
-    C.used, C.edges, C.at = {}, {}, nil
+    C.used, C.edges, C.at, C.reckon = {}, {}, nil, nil
     C.walls, C.was, C.other, C.desc = {}, {}, {}, {}
     release_view()
     elro.coins_clear()
@@ -716,6 +747,22 @@ function elro.cmd_coins(arg)
     if n and not C.used[n] then say("no room " .. n .. " is known.") return end
     C.walk = { target = n, steps = 0 }
     walk_next()
+  elseif arg:match("^at%s+%d+") then
+    local n = tonumber(arg:match("^at%s+(%d+)"))
+    local face = arg:match("^at%s+%d+%s+(%a+)$")
+    if not C.used[n] then say("no room " .. n .. " is known.") return end
+    if face and not COMPASS_I[face] then say("facing is north, east, south or west.") return end
+    if not C.on then
+      if not C.name then say("switch it on first: 'mapcoins on <room name>'.") return end
+      coins_on(C.name)
+    end
+    C.at, C.reckon = n, true
+    C.heading = face or C.heading or "north"
+    if next(C.desc) then C.relSeen = true end
+    C.view = nil
+    draw_room(n)
+    say(string.format("you are in room %d, facing %s; rooms with no coins are followed on the map from here.", n, C.heading))
+    here_echo()
   elseif arg == "relearn" then
     -- the coins stay in the rooms, so keep the numbers and forget only what was learned
     for n in pairs(C.used) do
@@ -739,6 +786,12 @@ function elro.cmd_coins(arg)
     else
       say("coin maze being laid out in the background; its lines come back on your next step.")
     end
+  elseif arg:match("^back") then
+    local v = arg:match("^back%s+(%a+)$")
+    if v == "stay" then C.backStays = true elseif v == "turn" then C.backStays = nil
+    elseif v then say("'mapcoins back turn' or 'mapcoins back stay'.") return end
+    say(C.backStays and "back steps away and keeps your facing ('mapcoins back turn' to change)."
+        or "back turns you round as you go ('mapcoins back stay' to change).")
   elseif arg:match("^twoway") then
     local v = arg:match("^twoway%s+(%a+)$")
     C.twoway = v == "on" or (v == nil and not C.twoway)
@@ -746,23 +799,6 @@ function elro.cmd_coins(arg)
         or "off: every way has to be walked to be known."))
   else
     list()
-  end
-end
-
--- Repair a running session from before compass words were ignored in a cave: such a word was
--- taken for a way out, and the way it had replaced is put back.
-for n, ways in pairs(C.other) do
-  for d, what in pairs(ways) do
-    if type(what) == "string" and what:find("^In this cave, you can't determine directions") then
-      ways[d] = nil
-      local old = C.was[n] and C.was[n][d]
-      if type(old) == "number" and not (C.edges[n] and C.edges[n][d]) then
-        C.edges[n] = C.edges[n] or {}
-        C.edges[n][d] = old
-        C.was[n][d] = nil
-        if roomExists(coin_id(n)) and roomExists(coin_id(old)) then setExit(coin_id(n), coin_id(old), d) end
-      end
-    end
   end
 end
 

@@ -733,6 +733,12 @@ the ways and keeps the numbers, since the coins are still lying there. `go` walk
 prompt, each chosen on arrival, so a way that turned out different cannot carry the rest of a
 burst into the wrong rooms.
 
+Every phrase the mode reads (wall lines, side words, bend words) lives in one table, `WORDS`,
+so a maze worded differently is a new entry rather than new code. Mazes also differ in what
+`back` does: in some it turns you round, in others it steps away and keeps the facing, and
+one maze switches between the two halfway through. That cannot be read from the text, so it
+is a setting, `mapcoins back turn|stay`, changed by hand when the maze changes.
+
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the
 server said. The walk remembers the rooms its path passes (`walk_steps`) so
