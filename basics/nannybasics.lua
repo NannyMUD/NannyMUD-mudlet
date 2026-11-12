@@ -197,9 +197,10 @@ function N.show_comp(word, on)
   say(nm .. (on and " shown" or " hidden; 'nanny show " .. word .. "' or a right-click on any strip brings it back"))
 end
 
-function N.place_comp(nm, cell)
-  if not N.comps[nm] then
-    say("no component '" .. tostring(nm) .. "'. Try vitals, channels, status, party or log.") return
+function N.place_comp(word, cell)
+  local nm = N.comp_named(word)
+  if not nm then
+    say("no pane '" .. tostring(word) .. "'. Try vitals, chat, score, cooldowns, party, guild or log.") return
   end
   if type(MudletBorders) ~= "table" or not MudletBorders.edge_of(cell) then
     say("place it in which cell? " .. table.concat(type(MudletBorders) == "table" and MudletBorders.cells() or {}, ", ")) return
@@ -2504,16 +2505,187 @@ do
   if N.encPrev == "" then N.encPrev = nil end
 end
 
--- nanny [log | hello | reload | update | encoding | place <what> <where> | layout]
+-- ================= help ===========================================================
+-- 'nanny help' reads these tables; help_md.lua writes the README's reference from them.
+-- A row is { command, one-line summary, full text }; a page is a title and paragraphs,
+-- "Head|text" being a paragraph under a heading.
+
+local HELP = {}
+HELP.sections = {
+  { title = "Panes and layout", rows = {
+    { "nanny place <pane> <cell>", "move a pane by name",
+      "Move a pane to a cell, the same as dragging it by its title strip. Bare 'nanny place' lists the cells; 'nanny layout' says where each pane is now." },
+    { "nanny hide <pane>", "close a pane",
+      "Close a pane, the same as the X on its title strip. The panes: vitals, chat, score, cooldowns, party, guild and log." },
+    { "nanny show <pane>", "bring a closed pane back",
+      "Bring a closed pane back, the same as its entry in the right-click menu of any strip or bar." },
+    { "nanny layout", "where each pane is", "Where each pane is, and whether the GMCP log is shown." },
+    { "nanny reset", "every pane back to its default place and size",
+      "Put every pane back in its default place and size, closed ones too." },
+    { "nanny off", "hide the whole panel",
+      "Hide the whole panel, map and panes, so the text has the whole window: for a second session in MultiView. It stays off across restarts of this profile until 'nanny on'." },
+    { "nanny on", "bring the panel back", "Bring the panel back after 'nanny off'." },
+  } },
+  { title = "The game's data", rows = {
+    { "nanny", "what has arrived from the game",
+      "Which kinds of data the game has sent so far, and how often. A pane that stays empty usually needs its toggle in the game: 'nanny help game' lists them." },
+    { "nanny log", "show or hide the GMCP log",
+      "Show or hide the GMCP log, the raw data as it arrives. Hidden by default." },
+    { "nanny hello", "ask the game for its data again",
+      "Ask the game again for every kind of data NannyBasics reads; useful after a toggle in the game." },
+    { "nanny encoding [on|off]", "repair å, ä and ö in other players' text",
+      "Players' text reaches you in whatever encoding their own client uses, so some players' letters come out wrong. With this on, the game is read as Latin-1, which keeps every byte, and UTF-8 and Windows text is turned back into the right letters; what you type goes out as Latin-1. On from the start; 'off' puts back the encoding your profile had before." },
+  } },
+  { title = "Guilds", rows = {
+    { "nanny rot [set|use|del|off|key|auto|go|bind|open|trace]", "a Strigoi power rotation",
+      "For the Strigoi: repeating a power costs you, so you mix several. Bare, your lists, the mode and the commands. 'set <name> <power>, <power>, ...' saves a list, written exactly as you would type the powers, and picks it; 'use <name>' picks one, 'del <name>' deletes one. 'off', 'key' and 'auto' set the mode: stopped, one power each time you press, or on its own. 'go' sends the next power in key mode, and 'bind <key>' puts that on a key such as F5 ('bind off' removes it). 'open <power>' starts each new fight with that power ('open off' stops). 'trace' prints every send, landing and refusal, or stops. It needs the foe gauge and the guild pane, and nothing goes out without a foe." },
+    { "nanny tome [probe|hide|show|relearn|forget] [spell]", "what the Cooldowns card has learned",
+      "Bare, the spell you have stored and what the Cooldowns card has learned about each spell's cooldown. 'probe <spell>' learns a cooldown for you: after each release the spell is chanted every few seconds until a chant works, never while a spell is stored, and the game's refusals are hidden; it stops by itself once the cooldown is known, 'probe off' stops it at once. 'hide <spell>' hides a bar and keeps what was learned, 'show <spell>' brings it back. 'relearn' (or 'relearn <spell>') after something shortened your cooldowns: the bar says maybe from the release, and a few early tries find the new length. 'forget <spell>' wipes what was learned about a spell." },
+    { "nanny icons [dark|emoji]", "the cooldown icons",
+      "The icons on the cooldown bars, the Strigoi's powers and the tome's spells alike: dark symbols, or emoji." },
+    { "nanny stack [chips|icons]", "how the Strigoi stack is shown",
+      "How the guild pane shows your stack: each power by a short name on a tinted ground (chips), or as icons." },
+  } },
+  { title = "The package", rows = {
+    { "nanny help [command or word]", "this list; a command in full, or a search",
+      "Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do) and 'nanny help game' (the toggles in the game)." },
+    { "nanny update [file]", "install the newest release",
+      "Download the newest release and swap it in, the map too if you have it. If the download fails nothing is changed; your layout is kept. With a file, install that package file instead. Shortly after Mudlet starts you are told when a release is out." },
+    { "nanny src [path|off]", "development: load the code from a file",
+      "For development: load nannybasics.lua from this path instead of the package's own copy, so 'nanny reload' picks up edits; 'off' goes back to the built-in copy from the next start." },
+    { "nanny reload", "development: load the code again", "Load the file set with 'nanny src' again." },
+  } },
+}
+HELP.pages = {
+  mouse = { title = "Dragging and clicking", paras = {
+    "Moving a pane|Drag a pane by its title strip: onto another pane to stack with it, near a pane's edge to split that space, or to an empty edge of the window to open a panel there.",
+    "Resizing|Drag the thin bars between panes, and at a panel's inner edge.",
+    "Closing|The X at the right end of a title strip closes that pane. Right-click any strip or bar for a menu that shows closed panes again or resets the layout.",
+    "The rotation strip|On the Strigoi guild pane, left click steps the mode, right click picks the next list.",
+    "Sizes, places and closed panes are remembered across restarts.",
+  } },
+  game = { title = "In the game", code = true, paras = {
+    "The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.",
+    "toggle gmcp|GMCP itself; Mudlet has it on by default.",
+    "toggle gmcp vitals|The HP and SP gauges and the body gauges.",
+    "toggle gmcp foe|The foe gauge.",
+    "toggle gmcp channels|The chat pane.",
+    "toggle gmcp status|The score card.",
+    "toggle gmcp group|The party pane.",
+    "toggle gmcp discord|Discord status from your client.",
+    "toggle strigoi gmcp|The guild pane, for the Strigoi.",
+    "toggle druids gmcp|The guild pane, for druids.",
+    "toggle vampires gmcp|The guild pane and your blood, for vampires.",
+  } },
+}
+HELP.page_order = { "mouse", "game" }
+
+-- the word after 'nanny' that names a row, or "nanny" for the bare command
+local function help_word(row) return row[1]:match("^nanny%s+(%a+)") or "nanny" end
+
+function HELP.all_rows()
+  local out = {}
+  for _, s in ipairs(HELP.sections) do for _, r in ipairs(s.rows) do out[#out + 1] = r end end
+  return out
+end
+
+-- what 'nanny help <arg>' shows: the list, a page, a command in full, a search, or nothing
+function HELP.lookup(arg)
+  arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", ""):gsub("^nanny%s+", "")
+  if arg == "" then return { kind = "list" } end
+  for name, p in pairs(HELP.pages) do
+    if arg == name or (#arg >= 4 and name:sub(1, #arg) == arg) then return { kind = "page", page = p } end
+  end
+  local exact = {}
+  for _, r in ipairs(HELP.all_rows()) do if help_word(r) == arg then exact[#exact + 1] = r end end
+  if #exact > 0 then return { kind = "detail", rows = exact } end
+  local rows, pages = {}, {}
+  for _, r in ipairs(HELP.all_rows()) do
+    if (r[1] .. " " .. r[2] .. " " .. r[3]):lower():find(arg, 1, true) then rows[#rows + 1] = r end
+  end
+  for _, name in ipairs(HELP.page_order) do
+    local p = HELP.pages[name]
+    if (p.title .. " " .. table.concat(p.paras, " ")):lower():find(arg, 1, true) then pages[#pages + 1] = name end
+  end
+  if #rows == 0 and #pages == 0 then return { kind = "none", word = arg } end
+  return { kind = "found", rows = rows, pages = pages, word = arg }
+end
+N.HELP = HELP
+
+local function wrap(text, width)
+  local lines, cur = {}, ""
+  for w in tostring(text):gmatch("%S+") do
+    if cur == "" then cur = w
+    elseif #cur + 1 + #w <= width then cur = cur .. " " .. w
+    else lines[#lines + 1] = cur ; cur = w end
+  end
+  if cur ~= "" then lines[#lines + 1] = cur end
+  return lines
+end
+
+function N.help(arg)
+  local ok, width = pcall(getWindowWrap, "main")
+  if not ok or type(width) ~= "number" or width < 40 then width = 80 end
+  local col = width >= 90 and 34 or 26
+  local function short_row(cmd, text)
+    local own = #cmd + 2 >= col
+    if own then cecho("<yellow>  " .. cmd .. "<reset>\n") end
+    for i, l in ipairs(wrap(text, width - col - 1)) do
+      if i == 1 and not own then
+        cecho(string.format("<yellow>  %s<reset>%s%s\n", cmd, string.rep(" ", col - 2 - #cmd), l))
+      else
+        cecho(string.rep(" ", col) .. l .. "\n")
+      end
+    end
+  end
+  local function para(text, indent)
+    for _, l in ipairs(wrap(text, width - #indent)) do cecho(indent .. l .. "\n") end
+  end
+  local r = HELP.lookup(arg)
+  if r.kind == "list" then
+    cecho("\n<cyan>NannyBasics " .. N.VERSION .. "<reset>: commands\n")
+    for _, s in ipairs(HELP.sections) do
+      cecho("\n<cyan>" .. s.title:upper() .. "<reset>\n")
+      for _, row in ipairs(s.rows) do short_row(row[1], row[2]) end
+    end
+    cecho("\n")
+    short_row("nanny help <command>", "that command in full")
+    short_row("nanny help <word>", "every entry that mentions the word")
+    short_row("nanny help mouse|game", "dragging and clicking; the toggles in the game")
+  elseif r.kind == "detail" then
+    for _, row in ipairs(r.rows) do
+      cecho("\n<yellow>  " .. row[1] .. "<reset>\n")
+      para(row[3], "    ")
+    end
+  elseif r.kind == "page" then
+    cecho("\n<cyan>NannyBasics<reset>: " .. r.page.title .. "\n\n")
+    for _, p in ipairs(r.page.paras) do
+      local h, body = p:match("^(.-)|(.+)$")
+      if h then cecho("<yellow>  " .. h .. "<reset>\n") ; para(body, "    ") else para(p, "  ") end
+      cecho("\n")
+    end
+  elseif r.kind == "found" then
+    cecho(string.format("\n<cyan>[nanny]: help that mentions '%s':<reset>\n", r.word))
+    for _, row in ipairs(r.rows) do short_row(row[1], row[2]) end
+    for _, name in ipairs(r.pages) do short_row("nanny help " .. name, HELP.pages[name].title) end
+  else
+    cecho(string.format("\n<yellow>[nanny]: nothing in the help mentions '%s'. 'nanny help' lists the commands.<reset>\n", r.word))
+  end
+  cecho("\n")
+end
+
+-- nanny [help | log | hello | reload | update | encoding | place <what> <where> | layout | ...]
 function N.cmd(arg)
   arg = (arg or ""):gsub("^%s+", ""):gsub("%s+$", "")
   local verb, rest = arg:match("^(%S+)%s*(.*)$")
   if arg == "log" then
     N.log_toggle()
+  elseif verb == "help" then
+    N.help(rest)
   elseif verb == "place" then
     local what, where = rest:match("^(%S+)%s+(%S+)$")
     if what then N.place_comp(what, where)
-    else say("usage: nanny place <vitals|channels|status|party|log> <cell>  (cells: " ..
+    else say("usage: nanny place <vitals|chat|score|cooldowns|party|guild|log> <cell>  (cells: " ..
              table.concat(type(MudletBorders) == "table" and MudletBorders.cells() or {}, ", ") .. ")") end
   elseif verb == "hide" or verb == "show" then
     if rest == "" then say("usage: nanny " .. verb .. " <vitals|chat|score|party|guild|log>") return end
@@ -2536,7 +2708,7 @@ function N.cmd(arg)
     say("asked the game for: " .. table.concat(N.WANT, ", "))
   elseif arg == "reset" then
     if type(MudletBorders) == "table" then MudletBorders.reset() ; N.relayout() end
-    say("layout sizes reset to defaults (placements kept).")
+    say("every pane back in its default place and size, closed ones too.")
   elseif arg == "off" then
     if type(MudletBorders) == "table" then MudletBorders.suspend() end
     say("right-side UI off for this session (map and panes); the text has the whole window. "
@@ -2597,18 +2769,8 @@ function N.cmd(arg)
     for k, n in pairs(N.seen) do names[#names + 1] = k .. " x" .. n end
     table.sort(names)
     say("received: " .. (#names > 0 and table.concat(names, ", ") or "nothing yet") ..
-        "\n  In the game: 'toggle gmcp', then 'toggle gmcp vitals', 'channels', 'foe', 'discord'," ..
-        "\n  'status' (score: XP gauge + stats) and 'group' (party: HP/SP of each member)." ..
-        "\n  Drag a pane by its title strip to move it: onto a pane to stack with it, near a pane's" ..
-        "\n  edge to split it, or to an empty window edge. Drag the thin bars to resize." ..
-        "\n  The X on a strip closes a pane; right-click any strip or bar to show it again." ..
-        "\n  'nanny hide <pane>' and 'nanny show <pane>' do the same by name." ..
-        "\n  'nanny place <comp> <cell>' also moves a pane; 'nanny reset' restores the default." ..
-        "\n  'nanny off' hides the whole right side (for an extra MultiView session); 'nanny on' back." ..
-        "\n  'nanny log' shows/hides the GMCP log, 'nanny layout' lists placement, 'nanny hello' re-asks." ..
-        "\n  'nanny icons dark|emoji' picks the guild pane's icons, 'nanny stack chips|icons' the stack's look." ..
-        "\n  'nanny encoding on|off' repairs å, ä and ö in other players' text." ..
-        "\n  'nanny update' installs the newest release. This is NannyBasics " .. N.VERSION .. ".")
+        "\n  A pane that stays empty needs its toggle in the game: 'nanny help game' lists them." ..
+        "\n  'nanny help' lists the commands. This is NannyBasics " .. N.VERSION .. ".")
   end
 end
 

@@ -53,55 +53,81 @@ you want both.
 `nanny update`: it downloads the new package and swaps it in, and the map too if you have it.
 If the download fails nothing is changed. Your layout is kept.
 
-Then, in the game, switch on what you want. Each setting is remembered when you log in again:
-
-```
-toggle gmcp            GMCP itself (Mudlet has it on by default)
-toggle gmcp vitals     the HP/SP gauges and the body gauges
-toggle gmcp foe        the foe gauge
-toggle gmcp channels   the chat pane
-toggle gmcp status     the score card
-toggle gmcp group      the party pane
-toggle gmcp discord    Discord status from your client
-toggle strigoi gmcp    the guild pane, for the Strigoi
-toggle druids gmcp     the guild pane, for druids
-toggle vampires gmcp   the guild pane and your blood, for vampires
-```
+Then, in the game, switch on what you want: [In the game](#in-the-game) lists the toggles, and
+each one is remembered when you log in again.
 
 ## Layout
 
 The panes sit in a panel beside the text, by default in two columns under the map if you use
 [the mapper](../mapper), with the vitals bar along the bottom.
 
-- Drag a pane by its title strip to move it: onto another pane to stack with it, near a
-  pane's edge to split that space, or to an empty edge of the window to open a panel there.
-- Drag the thin bars between panes, and at a panel's inner edge, to resize them.
-- The X at the right end of a title strip closes that pane. Right-click any strip or bar for
-  a menu that shows closed panes again, or resets the layout.
-- Sizes, places and closed panes are remembered across restarts.
-- Newer Mudlet puts a starter interface of its own into new profiles, with a second map, chat
-  and bars. NannyBasics asks it to step aside the first time it loads; `baseui show` brings
-  it back if you prefer it.
+[Dragging and clicking](#dragging-and-clicking) says how to move, resize and close them.
 
+Newer Mudlet puts a starter interface of its own into new profiles, with a second map, chat and
+bars. NannyBasics asks it to step aside the first time it loads; `baseui show` brings it back if
+you prefer it.
+
+<!-- help:begin (written by help_md.lua from nannybasics.lua: edit there) -->
 ## Commands
 
-```
-nanny                      what has arrived, and which toggles to turn on
-nanny place <pane> <cell>  move a pane by name; 'nanny layout' lists where each one is
-nanny hide / show <pane>   close a pane or bring it back (vitals, chat, score, party, guild, log)
-nanny reset                put every pane back in its default place and size, closed ones too
-nanny off / nanny on       hide the whole panel (for a second session in MultiView) / bring it back
-nanny log                  show or hide the GMCP log
-nanny hello                ask the game for the packages again
-nanny update               install the newest release
-nanny encoding on|off      repair å, ä and ö in other players' text, whatever their client sends
-```
+In Mudlet, `nanny help` lists these, `nanny help <command>` shows one in full and `nanny help <word>` finds every entry that mentions the word.
 
-Players' text reaches you in whatever encoding their own client uses, UTF-8 or an older one-byte
-set, and Mudlet reads the whole game with one setting, so some players' letters always come out
-wrong. NannyBasics therefore reads the game as Latin-1, which keeps every byte, and turns UTF-8 and
-Windows text back into the right letters; what you type goes out as Latin-1. This is on from the
-start. `nanny encoding off` puts back the encoding your profile had before.
+### Panes and layout
+
+- **`nanny place <pane> <cell>`** Move a pane to a cell, the same as dragging it by its title strip. Bare 'nanny place' lists the cells; 'nanny layout' says where each pane is now.
+- **`nanny hide <pane>`** Close a pane, the same as the X on its title strip. The panes: vitals, chat, score, cooldowns, party, guild and log.
+- **`nanny show <pane>`** Bring a closed pane back, the same as its entry in the right-click menu of any strip or bar.
+- **`nanny layout`** Where each pane is, and whether the GMCP log is shown.
+- **`nanny reset`** Put every pane back in its default place and size, closed ones too.
+- **`nanny off`** Hide the whole panel, map and panes, so the text has the whole window: for a second session in MultiView. It stays off across restarts of this profile until 'nanny on'.
+- **`nanny on`** Bring the panel back after 'nanny off'.
+
+### The game's data
+
+- **`nanny`** Which kinds of data the game has sent so far, and how often. A pane that stays empty usually needs its toggle in the game: 'nanny help game' lists them.
+- **`nanny log`** Show or hide the GMCP log, the raw data as it arrives. Hidden by default.
+- **`nanny hello`** Ask the game again for every kind of data NannyBasics reads; useful after a toggle in the game.
+- **`nanny encoding [on|off]`** Players' text reaches you in whatever encoding their own client uses, so some players' letters come out wrong. With this on, the game is read as Latin-1, which keeps every byte, and UTF-8 and Windows text is turned back into the right letters; what you type goes out as Latin-1. On from the start; 'off' puts back the encoding your profile had before.
+
+### Guilds
+
+- **`nanny rot [set|use|del|off|key|auto|go|bind|open|trace]`** For the Strigoi: repeating a power costs you, so you mix several. Bare, your lists, the mode and the commands. 'set <name> <power>, <power>, ...' saves a list, written exactly as you would type the powers, and picks it; 'use <name>' picks one, 'del <name>' deletes one. 'off', 'key' and 'auto' set the mode: stopped, one power each time you press, or on its own. 'go' sends the next power in key mode, and 'bind <key>' puts that on a key such as F5 ('bind off' removes it). 'open <power>' starts each new fight with that power ('open off' stops). 'trace' prints every send, landing and refusal, or stops. It needs the foe gauge and the guild pane, and nothing goes out without a foe.
+- **`nanny tome [probe|hide|show|relearn|forget] [spell]`** Bare, the spell you have stored and what the Cooldowns card has learned about each spell's cooldown. 'probe <spell>' learns a cooldown for you: after each release the spell is chanted every few seconds until a chant works, never while a spell is stored, and the game's refusals are hidden; it stops by itself once the cooldown is known, 'probe off' stops it at once. 'hide <spell>' hides a bar and keeps what was learned, 'show <spell>' brings it back. 'relearn' (or 'relearn <spell>') after something shortened your cooldowns: the bar says maybe from the release, and a few early tries find the new length. 'forget <spell>' wipes what was learned about a spell.
+- **`nanny icons [dark|emoji]`** The icons on the cooldown bars, the Strigoi's powers and the tome's spells alike: dark symbols, or emoji.
+- **`nanny stack [chips|icons]`** How the guild pane shows your stack: each power by a short name on a tinted ground (chips), or as icons.
+
+### The package
+
+- **`nanny help [command or word]`** Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do) and 'nanny help game' (the toggles in the game).
+- **`nanny update [file]`** Download the newest release and swap it in, the map too if you have it. If the download fails nothing is changed; your layout is kept. With a file, install that package file instead. Shortly after Mudlet starts you are told when a release is out.
+- **`nanny src [path|off]`** For development: load nannybasics.lua from this path instead of the package's own copy, so 'nanny reload' picks up edits; 'off' goes back to the built-in copy from the next start.
+- **`nanny reload`** Load the file set with 'nanny src' again.
+
+## Dragging and clicking
+
+- **Moving a pane.** Drag a pane by its title strip: onto another pane to stack with it, near a pane's edge to split that space, or to an empty edge of the window to open a panel there.
+- **Resizing.** Drag the thin bars between panes, and at a panel's inner edge.
+- **Closing.** The X at the right end of a title strip closes that pane. Right-click any strip or bar for a menu that shows closed panes again or resets the layout.
+- **The rotation strip.** On the Strigoi guild pane, left click steps the mode, right click picks the next list.
+
+Sizes, places and closed panes are remembered across restarts.
+
+## In the game
+
+The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.
+
+- `toggle gmcp`: GMCP itself; Mudlet has it on by default.
+- `toggle gmcp vitals`: The HP and SP gauges and the body gauges.
+- `toggle gmcp foe`: The foe gauge.
+- `toggle gmcp channels`: The chat pane.
+- `toggle gmcp status`: The score card.
+- `toggle gmcp group`: The party pane.
+- `toggle gmcp discord`: Discord status from your client.
+- `toggle strigoi gmcp`: The guild pane, for the Strigoi.
+- `toggle druids gmcp`: The guild pane, for druids.
+- `toggle vampires gmcp`: The guild pane and your blood, for vampires.
+
+<!-- help:end -->
 
 ## Rotation
 
@@ -185,7 +211,11 @@ file changes, and only ever add to what it offers: older packages keep calling i
 While developing, `nanny src <path to your checkout's basics/nannybasics.lua>` makes the
 package load that file instead of its built-in copy, so `nanny reload` picks up edits without
 reinstalling; `nanny src off` goes back to the built-in copy. Tests:
-`luajit basics/tests/test_border.lua` and `luajit basics/tests/test_guild.lua`.
+`luajit basics/tests/test_<name>.lua` for each file in `tests/`.
+
+The command reference above is written from the help tables in `nannybasics.lua` by
+`luajit basics/help_md.lua`; run it after changing them, and `tests/test_help.lua` fails until
+you do.
 
 ## License
 
