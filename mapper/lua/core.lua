@@ -716,6 +716,62 @@ function elro.set_vertpack(mode)
   elro.flush()
 end
 
+-- ---- Mudlet settings this mapper starts off (stitching, the rings of other levels) ----
+-- Mudlet's own profile settings. Off unless the player chose with the command: stitched
+-- neighbours overlap, since our areas are laid out one by one, and the rings of the levels
+-- above and below cover the level shown once floors are stacked. A choice is kept in the map.
+local MUDLET_PREFS = {
+  stitch = { key = "mapStitchAreas", ud = "elro.stitch", cmd = "mapstitch", what = "stitching",
+             since = "it came with the 3D map in 5.1",
+             on = "the 3D map draws neighbouring areas around the one you are in.",
+             off = "the 3D map shows only the area you are in." },
+  levels = { key = "showUpperLowerLevels", ud = "elro.levels", cmd = "maplevels",
+             what = "the levels above and below", since = "it came in Mudlet 4.20",
+             on = "the 2D map shows rooms one level up and down as rings.",
+             off = "the 2D map shows only the level you are on." },
+}
+
+local function pref_chosen(P)
+  if type(getMapUserData) ~= "function" then return nil end
+  local ok, s = pcall(getMapUserData, P.ud)
+  return ok and (s == "on" or s == "off") and s or nil
+end
+
+local function pref_set(P, on)
+  if type(setConfig) ~= "function" then return false end
+  return pcall(setConfig, P.key, on) and true or false
+end
+
+function elro.mudlet_prefs_boot()
+  for _, P in pairs(MUDLET_PREFS) do
+    if not pref_chosen(P) then pref_set(P, false) end
+  end
+end
+-- once the map is loaded, so a choice kept in it is seen
+if type(tempTimer) == "function" then tempTimer(2, function() elro.mudlet_prefs_boot() end) end
+
+local function pref_cmd(P, arg)
+  arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+  local none = "\n<yellow>[elro]: this Mudlet cannot switch " .. P.what .. " (" .. P.since .. ").\n<reset>"
+  if arg ~= "on" and arg ~= "off" then
+    local ok, v = pcall(getConfig, P.key)
+    if not ok or v == nil then cecho(none) return end
+    cecho(string.format("\n<green>[elro]: %s %s. '%s %s' to change it.\n<reset>",
+      P.what, v and "on" or "off", P.cmd, v and "off" or "on"))
+    return
+  end
+  if not pref_set(P, arg == "on") then cecho(none) return end
+  if type(setMapUserData) == "function" then
+    pcall(setMapUserData, P.ud, arg)
+    if type(saveMap) == "function" then pcall(saveMap) end
+  end
+  cecho(string.format("\n<green>[elro]: %s %s: %s\n<reset>", P.what, arg == "on" and "ON" or "OFF",
+    P[arg]))
+end
+
+function elro.cmd_stitch(arg) pref_cmd(MUDLET_PREFS.stitch, arg) end
+function elro.cmd_levels(arg) pref_cmd(MUDLET_PREFS.levels, arg) end
+
 -- ---- manual edits: fold a branch into a submap ----------------------------
 -- The set of rooms reachable from fromId's dir exit WITHOUT passing back
 -- through fromId -- i.e. the branch hanging off that edge. Returns set,dest or

@@ -280,6 +280,20 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<regex>^mapvert(?:\s+(.+))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>mapstitch</name>
+				<script>elro.with_rest(matches[2], elro.cmd_stitch)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapstitch(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>maplevels</name>
+				<script>elro.with_rest(matches[2], elro.cmd_levels)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^maplevels(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>mapexport</name>
 				<script>elro.with_rest(matches[2], elro.cmd_export)</script>
 				<command></command>

@@ -197,5 +197,32 @@ do
   elro.vertDeclineStack = nil
 end
 
+-- stitching: off unless chosen, and a choice is kept
+do
+  local cfg, ud = { mapStitchAreas = true }, {}
+  setConfig = function(k, v) cfg[k] = v end
+  getConfig = function(k) return cfg[k] end
+  getMapUserData = function(k) return ud[k] or "" end
+  setMapUserData = function(k, v) ud[k] = v end
+  saveMap = function() end
+  local real_cecho = cecho
+  cecho = function() end
+  elro.mudlet_prefs_boot()
+  eq(cfg.mapStitchAreas, false, "stitching off by default")
+  elro.cmd_stitch("on")
+  eq(cfg.mapStitchAreas == true and ud["elro.stitch"] == "on", true, "'mapstitch on' turns it on and records it")
+  elro.mudlet_prefs_boot()
+  eq(cfg.mapStitchAreas, true, "a chosen 'on' survives the next start")
+  elro.cmd_stitch("off")
+  eq(cfg.mapStitchAreas == false and ud["elro.stitch"] == "off", true, "'mapstitch off'")
+  -- the rings of the levels above and below: the same, through 'maplevels'
+  eq(cfg.showUpperLowerLevels, false, "the other levels' rings off by default")
+  elro.cmd_levels("on")
+  eq(cfg.showUpperLowerLevels == true and ud["elro.levels"] == "on", true, "'maplevels on'")
+  elro.mudlet_prefs_boot()
+  eq(cfg.showUpperLowerLevels, true, "a chosen 'on' survives the next start")
+  cecho = real_cecho
+end
+
 print(string.format("test_vertstack: %d check(s), %d failure(s)", ntest, fail))
 os.exit(fail == 0 and 0 or 1)

@@ -113,7 +113,7 @@ In Mudlet, `maphelp` lists these, `maphelp <command>` shows one in full and `map
 
 ### Getting started
 
-- **`maphelp [command or word]`** Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself) and 'maphelp share' (moving your map).
+- **`maphelp [command or word]`** Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp setup' (the settings we recommend), 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself), 'maphelp 3d' (Mudlet's 3D map) and 'maphelp share' (moving your map).
 - **`maplegend`** What the colours, dots, letters and lines on the map mean, and how to read a room.
 - **`mapwin [dock [width]|embed|left|right|lock|unlock|reset]`** Bare, open or close Mudlet's own map window (the same as its Map button). 'mapwin dock' puts the map in a panel on the right, shared with NannyBasics' panes; again closes it, 'mapwin dock <width>' sets its width. 'mapwin embed' is a small window over a top corner of the text instead; there 'left' and 'right' pick the corner, 'lock' removes the frame, 'unlock' brings it back and 'reset' restores the first size. Mudlet can show the map in only one of these per session: to change over, close the one you have, restart Mudlet, then open the other.
 - **`mapupdate`** Replace this package with the newest release, NannyBasics too if you have it. Shortly after Mudlet starts you are told when one is out. It downloads first, so a failed download changes nothing; your map lives in the profile and is untouched.
@@ -161,6 +161,8 @@ In Mudlet, `maphelp` lists these, `maphelp <command>` shows one in full and `map
 - **`mapglyphs [on|off]`** A letter on rooms with an exit you type instead of a direction.
 - **`mapstubs [on|off|edges|classic|halo N]`** What the map draws for unexplored exits. Mudlet redraws every stub of its own every frame, so a big part-explored area is slow. 'edges' draws each unexplored exit as a short line instead, which is far cheaper; 'classic' is Mudlet's stubs with a halo, showing only the stubs within N cells of you once an area has a lot. Nothing is lost either way.
 - **`mapvert [on|stack|off]`** 'on' docks each floor beside the one it connects to, so every floor shows at once; a floor with no room beside its stair goes on its own level over it instead, and so does anything beyond it. 'stack' puts each floor on its own level, directly over or under its stair: right for Mudlet's 3D map, where up and down then stand upright instead of running across the map; in the 2D map you see one level at a time. 'off' places every floor on its own. Remembered.
+- **`mapstitch [on|off]`** Mudlet's 3D map (5.1) can draw the areas next to the one you are in around its edges. Off unless you turn it on: this mapper lays each area out on its own, so neighbours drawn together can overlap. Bare, says which it is. Kept in the map, so your choice holds.
+- **`maplevels [on|off]`** Mudlet can draw the rooms one level up and one level down as rings on the 2D map. Off unless you turn it on: with stacked floors the rings cover the level you are on. On, make them faint in Preferences: open the colour for the upper or lower level and set its alpha channel to about 50. Bare, says which it is. Kept in the map, so your choice holds.
 - **`mapareamin <n>`** The smallest cluster of rooms that keeps an area of its own instead of folding into the world map. Remembered.
 
 ## Advanced commands
@@ -224,6 +226,17 @@ Shaping the map by hand, mazes, diagnostics and tuning; `maphelp advanced` in Mu
 - **`mapreload`** Re-read lua/modules.lua and every module from disk, with no reinstall; also drops the room-state snapshot ('mapcs reset' does that alone).
 - **`mapsrc [path]`** Show or set the directory the modules are loaded from. Remembered.
 
+## Recommended setup
+
+What this mapper sets for you, and what to set yourself. Every choice below can be changed back.
+
+- **In the game.** 'toggle gmcp' and 'toggle gmcp room' switch the map data on; both are remembered at your next login.
+- **The map window.** 'mapwin dock' puts the map in a panel on the right, shared with NannyBasics' panes. Mudlet's own Map button works too.
+- **Floors in 2D.** 'mapvert on' (the default) docks each floor beside the one it connects to, so you see every floor at once. A floor with no room beside its stair goes on its own level over it.
+- **Other levels in 2D.** Hidden by default, so a stacked floor never covers the level you are on. 'maplevels on' shows them as rings; then set the alpha channel of the upper and lower level colours in Preferences to about 50, so they stay faint.
+- **Prompts.** 'mapprompts' is on by default: a speedwalk shows one prompt, not one per step.
+- **The 3D map.** Mudlet 5.1's 3D map is an experiment you switch on yourself. With it, type 'mapvert stack' so floors stand on their own levels. Neighbouring areas stay off ('mapstitch'). 'maphelp 3d' has the rest.
+
 ## On the map, with the mouse
 
 - **Double-click a room.** Walks there by the shortest way, using recorded exits where they are needed.
@@ -242,6 +255,17 @@ Shaping the map by hand, mazes, diagnostics and tuning; `maphelp advanced` in Mu
 - **Prompts.** A speedwalk or alias that sends several commands shows one prompt, not one per command ('mapprompts').
 - **Updates.** Shortly after Mudlet starts you are told when a newer release is out ('mapupdate').
 - **Maze coins.** The coin maze's own map is wiped at the next start ('mapcoins').
+
+## The 3D map
+
+Mudlet 5.1 has a new 3D map, still an experiment, so it is off until you switch it on. It draws the same map as the 2D one, in one of seven styles; 'diorama' looks like a model town on a board.
+
+- **Switching it on.** lua setConfig("experiment.3dmap.modernmapper", true) or Settings, Advanced, Experiments, tick 'Modern 3D mapper'.
+- **Picking a style.** Preferences, Mapper; or for example: lua setConfig("mapStyle", "diorama")
+- **Floors.** Type 'mapvert stack' while you use the 3D map: each floor goes on its own level over its stairs, so up and down stand upright instead of running across the map. 'mapvert on' puts back the flat layout, which gives the better overview in 2D.
+- **Other levels in 2D.** The rooms one level up and down are hidden unless you type 'maplevels on'. Then they show as rings; to make them faint, open the colour for the upper or lower level in Preferences and set its alpha channel to about 50 (255 is solid).
+- **Neighbouring areas.** Mudlet can draw the areas next to yours around its edges. This mapper keeps that off, because areas laid out one by one overlap when drawn together; 'mapstitch on' if you want it anyway.
+- **Clicking.** Double-click a room to walk there and right-click for the same menu as on the 2D map.
 
 ## Moving your map
 

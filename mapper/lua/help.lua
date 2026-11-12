@@ -7,7 +7,7 @@ local H = {}
 H.sections = {
   { title = "Getting started", rows = {
     { "maphelp [command or word]", "this list; a command's full text, or every help entry with that word",
-      "Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself) and 'maphelp share' (moving your map)." },
+      "Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp setup' (the settings we recommend), 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself), 'maphelp 3d' (Mudlet's 3D map) and 'maphelp share' (moving your map)." },
     { "maplegend", "what the colours, dots, letters and lines mean",
       "What the colours, dots, letters and lines on the map mean, and how to read a room." },
     { "mapwin [dock [width]|embed|left|right|lock|unlock|reset]", "open, close or move the map window",
@@ -81,6 +81,10 @@ H.sections = {
       "What the map draws for unexplored exits. Mudlet redraws every stub of its own every frame, so a big part-explored area is slow. 'edges' draws each unexplored exit as a short line instead, which is far cheaper; 'classic' is Mudlet's stubs with a halo, showing only the stubs within N cells of you once an area has a lot. Nothing is lost either way." },
     { "mapvert [on|stack|off]", "how floors joined by up and down are placed",
       "'on' docks each floor beside the one it connects to, so every floor shows at once; a floor with no room beside its stair goes on its own level over it instead, and so does anything beyond it. 'stack' puts each floor on its own level, directly over or under its stair: right for Mudlet's 3D map, where up and down then stand upright instead of running across the map; in the 2D map you see one level at a time. 'off' places every floor on its own. Remembered." },
+    { "mapstitch [on|off]", "neighbouring areas around the one shown in 3D",
+      "Mudlet's 3D map (5.1) can draw the areas next to the one you are in around its edges. Off unless you turn it on: this mapper lays each area out on its own, so neighbours drawn together can overlap. Bare, says which it is. Kept in the map, so your choice holds." },
+    { "maplevels [on|off]", "show the levels above and below as rings in 2D",
+      "Mudlet can draw the rooms one level up and one level down as rings on the 2D map. Off unless you turn it on: with stacked floors the rings cover the level you are on. On, make them faint in Preferences: open the colour for the upper or lower level and set its alpha channel to about 50. Bare, says which it is. Kept in the map, so your choice holds." },
     { "mapareamin <n>", "how small an area folds into the world map",
       "The smallest cluster of rooms that keeps an area of its own instead of folding into the world map. Remembered." },
   } },
@@ -194,6 +198,24 @@ H.pages = {
     "Updates|Shortly after Mudlet starts you are told when a newer release is out ('mapupdate').",
     "Maze coins|The coin maze's own map is wiped at the next start ('mapcoins').",
   } },
+  setup = { title = "Recommended setup", paras = {
+    "What this mapper sets for you, and what to set yourself. Every choice below can be changed back.",
+    "In the game|'toggle gmcp' and 'toggle gmcp room' switch the map data on; both are remembered at your next login.",
+    "The map window|'mapwin dock' puts the map in a panel on the right, shared with NannyBasics' panes. Mudlet's own Map button works too.",
+    "Floors in 2D|'mapvert on' (the default) docks each floor beside the one it connects to, so you see every floor at once. A floor with no room beside its stair goes on its own level over it.",
+    "Other levels in 2D|Hidden by default, so a stacked floor never covers the level you are on. 'maplevels on' shows them as rings; then set the alpha channel of the upper and lower level colours in Preferences to about 50, so they stay faint.",
+    "Prompts|'mapprompts' is on by default: a speedwalk shows one prompt, not one per step.",
+    "The 3D map|Mudlet 5.1's 3D map is an experiment you switch on yourself. With it, type 'mapvert stack' so floors stand on their own levels. Neighbouring areas stay off ('mapstitch'). 'maphelp 3d' has the rest.",
+  } },
+  ["3d"] = { title = "The 3D map", paras = {
+    "Mudlet 5.1 has a new 3D map, still an experiment, so it is off until you switch it on. It draws the same map as the 2D one, in one of seven styles; 'diorama' looks like a model town on a board.",
+    "Switching it on|lua setConfig(\"experiment.3dmap.modernmapper\", true) or Settings, Advanced, Experiments, tick 'Modern 3D mapper'.",
+    "Picking a style|Preferences, Mapper; or for example: lua setConfig(\"mapStyle\", \"diorama\")",
+    "Floors|Type 'mapvert stack' while you use the 3D map: each floor goes on its own level over its stairs, so up and down stand upright instead of running across the map. 'mapvert on' puts back the flat layout, which gives the better overview in 2D.",
+    "Other levels in 2D|The rooms one level up and down are hidden unless you type 'maplevels on'. Then they show as rings; to make them faint, open the colour for the upper or lower level in Preferences and set its alpha channel to about 50 (255 is solid).",
+    "Neighbouring areas|Mudlet can draw the areas next to yours around its edges. This mapper keeps that off, because areas laid out one by one overlap when drawn together; 'mapstitch on' if you want it anyway.",
+    "Clicking|Double-click a room to walk there and right-click for the same menu as on the 2D map.",
+  } },
   share = { title = "Moving your map", paras = {
     "'mapexport' makes a picture to print. It does not copy your map. The map itself lives in your Mudlet profile, and Mudlet moves it:",
     "To another profile of yours|Settings, the Mapper tab, 'Copy map to other profile(s)': pick the profiles and press Copy.",
@@ -205,7 +227,7 @@ H.pages = {
     "A map shows where you have been. Handing one over hands over that exploring.",
   } },
 }
-H.page_order = { "mouse", "auto", "share" }
+H.page_order = { "setup", "mouse", "auto", "3d", "share" }
 
 -- the command word of a row, and every word it answers to
 local function words(row)
@@ -298,7 +320,8 @@ function elro.map_help(arg)
     end
     short_row("maphelp <command>", "that command in full")
     short_row("maphelp <word>", "every entry that mentions the word")
-    short_row("maphelp mouse|auto|share", "what clicking does, what happens by itself, moving your map")
+    short_row("maphelp setup", "the settings we recommend, for 2D and 3D")
+    short_row("maphelp mouse|auto|3d|share", "clicking, what happens by itself, the 3D map, moving your map")
   elseif r.kind == "detail" then
     for _, row in ipairs(r.rows) do
       cecho("\n<yellow>  " .. row[1] .. "<reset>\n")
