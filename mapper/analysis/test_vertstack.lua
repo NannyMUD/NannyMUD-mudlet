@@ -224,5 +224,18 @@ do
   cecho = real_cecho
 end
 
+-- a room on another level under a stretched edge is not buried: no yellow mark
+do
+  reset_map() ; AID = addAreaName("buried")
+  room(1) ; room(2) ; link(1, 2, "east")
+  room(3) ; room(4)
+  setRoomCoordinates(1, 0, 0, 0) ; setRoomCoordinates(2, 3, 0, 0)
+  setRoomCoordinates(3, 1, 0, 1) ; setRoomCoordinates(4, 2, 0, 0)
+  local coord = { [1] = { 0, 0 }, [2] = { 3, 0 }, [3] = { 1, 0 }, [4] = { 2, 0 } }
+  elro.draw_residual(coord)
+  eq(getRoomUserData(3, "occl") ~= "1", true, "a room one level up is not under the edge")
+  eq(getRoomUserData(4, "occl"), "1", "a room on the edge's own level is")
+end
+
 print(string.format("test_vertstack: %d check(s), %d failure(s)", ntest, fail))
 os.exit(fail == 0 and 0 or 1)

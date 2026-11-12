@@ -574,7 +574,7 @@ end
 local function vert_gl(G, links)
   local gl = {}
   for _, p in ipairs(links) do
-    if p.cls ~= "cross" and G.coord[p.a] and G.coord[p.b] then gl[#gl + 1] = p end
+    if p.cls ~= "cross" and not p.stacked and G.coord[p.a] and G.coord[p.b] then gl[#gl + 1] = p end
   end
   return gl
 end
@@ -1612,7 +1612,7 @@ function elro.draw_vertical(coord, sink)
   if not V or type(addCustomLine) ~= "function"
      or type(getRoomCoordinates) ~= "function" then return 0, 0, 0, 0 end
   local col = (elro.classColours and elro.classColours.vertical) or { 0, 210, 190 }
-  local occ = elro.cell_census(coord)
+  local occAt = elro.census_levels(coord)
   local nStraight, nBend, nQuiet, nReal = 0, 0, 0, 0
   for _, p in ipairs(V) do
     local a = p.from
@@ -1621,10 +1621,10 @@ function elro.draw_vertical(coord, sink)
     -- floor not yet docked in this frame. A typed link is draw_special's: grey and dotted.
     -- a stair whose floor went on its own level is Mudlet's to draw, as when stacked
     if not p.typed and not p.stacked and coord[a] and coord[b] and roomExists(a) and roomExists(b) then
-      local ax, ay = getRoomCoordinates(a)
+      local ax, ay, az = getRoomCoordinates(a)
       local bx, by = getRoomCoordinates(b)
       if ax and bx and (ax ~= bx or ay ~= by) then
-        local pts, style, kind = vert_polyline(p, ax, ay, bx, by, occ, a, b)
+        local pts, style, kind = vert_polyline(p, ax, ay, bx, by, occAt(az), a, b)
         if pts then
           local d = elro.shortDir(p.dir)
           pcall(addCustomLine, a, pts, d, style, col, false)

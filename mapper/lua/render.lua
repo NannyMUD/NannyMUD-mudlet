@@ -724,15 +724,27 @@ end
 
 -- ---- SHARED DRAW-TIME GEOMETRY ---------------------------------------------
 -- Live coords: callers must run after positioning.
-function elro.cell_census(coord)
+-- occupied cells of `coord`; with `z`, only the rooms on that level
+function elro.cell_census(coord, z)
   local occ = {}
   for r in pairs(coord) do
     if roomExists(r) then
-      local x, y = getRoomCoordinates(r)
-      if x then occ[x .. ":" .. y] = r end
+      local x, y, rz = getRoomCoordinates(r)
+      if x and (z == nil or (rz or 0) == z) then occ[x .. ":" .. y] = r end
     end
   end
   return occ
+end
+
+-- a lookup level -> census, built on first use: a room only buries or blocks on its own level
+function elro.census_levels(coord)
+  local m = {}
+  return function(z)
+    z = z or 0
+    local o = m[z]
+    if not o then o = elro.cell_census(coord, z) ; m[z] = o end
+    return o
+  end
 end
 
 -- Exact: does this segment pass through the CENTRE of an occupied cell? Integer coords make
@@ -783,7 +795,7 @@ function elro.draw_demoted(coord)
   if not dem or #dem == 0 or type(addCustomLine) ~= "function"
      or type(getRoomCoordinates) ~= "function" then return end
   local col = (elro.classColours and elro.classColours.demoted) or { 255, 60, 220 }
-  local occ = elro.cell_census(coord)
+  local occAt, occ = elro.census_levels(coord), nil
   local function blocked_by(px, py, qx, qy, a, b)
     return elro.blocked_by(occ, px, py, qx, qy, a, b)
   end
@@ -815,6 +827,7 @@ function elro.draw_demoted(coord)
           pts = { { ax, ay, az }, { ax + va[1] * ts, ay + va[2] * ts, az } }
         else
           pts = { { ax + va[1] * st, ay + va[2] * st, az }, { bx, by, bz } }
+          occ = occAt(az)
           -- bow around an intervening room on whichever side is clear, else stay straight
           local blk = blocked_by(pts[1][1], pts[1][2], bx, by, a, b)
           if blk then
@@ -889,8 +902,8 @@ end
 function elro.draw_residual(coord)
   if type(addCustomLine) ~= "function" or type(getRoomCoordinates) ~= "function"
      or type(getRoomExits) ~= "function" then return end
-  local occ = elro.cell_census(coord)
-  local red = (elro.classColours and elro.classColours.residual) or { 255, 60, 60 }
+  local occAt = elro.census_levels(coord)
+  local red =(elro.classColours and elro.classColours.residual) or { 255, 60, 60 }
   local yel = (elro.classColours and elro.classColours.occluded) or { 255, 210, 0 }
   -- Highlights are not custom lines, so clear last relayout's rings by hand, and only for
   -- rooms on THIS canvas. Driven by the `occl` userdata rather than the live table so the
@@ -938,23 +951,23 @@ function elro.draw_residual(coord)
   local n, onEdge, inbound = 0, {}, {}
   for a in pairs(coord) do
     if roomExists(a) then
-      local ax, ay = getRoomCoordinates(a)
+      local ax, ay, az = getRoomCoordinates(a)
       for dn, b in pairs(getRoomExits(a) or {}) do
         local d = elro.norm(dn)
         local de = elro.delta[d]
         if ax and de and coord[b] and roomExists(b) and b ~= a
            and (de[1] ~= 0 or de[2] ~= 0) then
-          local bx, by = getRoomCoordinates(b)
+          local bx, by, bz = getRoomCoordinates(b)
           if bx then
             local dx, dy = bx - ax, by - ay
             if (dx ~= 0 or dy ~= 0) and not elro.drawn_direction_ok(de, dx, dy) then
               -- CATEGORY 4: kept by the equations, drawn off-axis. Red.
               if mark(a, b, d, de, red, true) then n = n + 1 end
-            elseif elro.markOnEdge ~= false
+            elseif elro.markOnEdge ~= false and (az or 0) == (bz or 0)
                    and (math.abs(dx) > 1 or math.abs(dy) > 1) then
               -- room-on-edge: mark the buried ROOM and its inbound edges, not the (truthful)
               -- long edge. Only a stretched edge can bury anything.
-              local o = elro.room_on_segment(occ, ax, ay, bx, by, a, b)
+              local o = elro.room_on_segment(occAt(az), ax, ay, bx, by, a, b)
               if o then onEdge[o] = true end
             end
             -- inbound index for the marking pass below
@@ -985,9 +998,9 @@ function elro.draw_residual(coord)
       local a, d, de = inb.a, inb.d, inb.de
       local ok = true
       if elro.onEdgeHideUnfollowable then
-        local ax, ay = getRoomCoordinates(a)
+        local ax, ay, az = getRoomCoordinates(a)
         local bx, by = getRoomCoordinates(r)
-        ok = not (ax and bx and elro.room_on_segment(occ, ax, ay, bx, by, a, r))
+        ok = not (ax and bx and elro.room_on_segment(occAt(az), ax, ay, bx, by, a, r))
       end
       if ok and mark(a, r, d, de, yel) then nEdge = nEdge + 1 end
     end
