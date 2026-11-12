@@ -2960,6 +2960,17 @@ elro.filler_verbs = {
 -- with the server's list.
 elro.hook_verbs = { enter = true, exit = true, out = true, ["in"] = true }
 
+-- A spell gate is an object someone left, not an exit of the room. The game's text calls
+-- elro.gate_seen(); the next "enter gate" out of that room is then a jump, unless the edge
+-- was recorded by hand. Cleared on every move.
+function elro.gate_seen() elro.gateAt = elro.current end
+
+function elro.is_gate_cmd(cmd)
+  local w = {}
+  for x in string.gmatch(string.lower(cmd or ""), "%S+") do w[#w + 1] = x end
+  return w[1] == "enter" and (w[#w] == "gate" or w[#w] == "gateway")
+end
+
 -- The verb worth showing for a recorded edge command. The stored value may be
 -- SEVERAL commands joined by SDELIM ("open gate" ;; "enter gate"); the LAST one
 -- is the step that actually moves you, so its verb is the one that counts --
@@ -4932,6 +4943,15 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
   if elro.profOn then elro._prof = {} ; _pfTotal = pf("total") end
   if dir == nil or dir == "" then dir = "none" end
   dir = elro.norm(dir)
+  local gateAt = elro.gateAt
+  elro.gateAt = nil
+  if gateAt and fromId == gateAt and elro.is_gate_cmd(dir) and not (elro.rec and elro.rec.from == fromId) then
+    if elro.smap == nil then elro.load_smap() end
+    if not elro.smap[fromId .. ":" .. id] then
+      cecho("\n<grey>[elro]: through a spell gate: no exit recorded (maprecordmove to keep one).<reset>\n")
+      fromId, dir = 0, "none"
+    end
+  end
   -- An old trigger regex (`exits=(.*)$`) leaks later fields into `exits`. A real
   -- exit list never contains '|', so split there.
   if exits then

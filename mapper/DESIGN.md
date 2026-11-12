@@ -82,6 +82,15 @@ command (the same store `maprecordmove` writes, first-writer wins), which is wha
 makes `climb mountain` replayable without recording it by hand. The server never
 sends room prose there any more; a move it cannot name arrives as `dir=none`.
 
+**A spell gate is not an exit.** A magician's gate is an object left in a room for a
+while, and its `enter gate` arrives like any other command. The map data comes before
+the room's text, so a trigger on the gate's line (or the casting message) marks the
+room the client already knows it is in; the next `enter gate` from it is handled as a
+jump, which also keeps the gate's far end from inheriting the near end's area. Only
+that command, only on that visit: a real gate elsewhere, or here when no spell gate is
+shown, is still mapped. A player who keeps a gate in one spot records it with
+`maprecordmove`, and a recorded edge is walked as usual.
+
 **Recorded exits outlive the rooms.** The command store is map-level, keyed by
 permanent ids, so a GUI delete of rooms leaves it intact while Mudlet's special
 exits die with the rooms; re-exploring then showed a glyph for an exit the map
