@@ -21,10 +21,10 @@ you want both, and they share one layout.
   never follow, or are elsewhere.
 - **Guild pane**, for the Strigoi, druids, alchemists and vampires. For the Strigoi: guild
   level and points, guild points per hour since your last `soultick reset`, penalty, wasp, your stack,
-  and your stats with the guild's changes and harvest gains shown beside each. A bar per
-  cooldown fills as it recharges. The game does not say how long a cooldown lasts, so
-  NannyBasics times each one as you use it; until it has, the bar counts up instead. Each
-  power has an icon on its bar: dark tinted symbols by default, or emoji with 'nanny icons
+  and your stats with the guild's changes and harvest gains shown beside each. Cooldowns have
+  a card of their own, where a bar per power fills as it recharges. The game does not say how
+  long a cooldown lasts, so NannyBasics times each one as you use it; until it has, the bar
+  counts up instead. Each power has an icon on its bar: dark tinted symbols by default, or emoji with 'nanny icons
   emoji' ('nanny icons dark' switches back). Your stack shows each power by a short name on
   a tinted ground; 'nanny stack icons' shows it as icons instead ('nanny stack chips' back). For a druid, barkskin
   gets a bar too, timed the same way, that empties as it wears off; the spells stored in
@@ -34,6 +34,10 @@ you want both, and they share one layout.
   age, veil, celerity and your vampire toggles. The vampire pane is built from the game's
   help and has not met a live vampire yet: if something looks wrong, send the
   `Guild.Vampire` line from `nanny log`.
+- **Strigoi power rotation**: on the guild pane, a strip that sends the powers you listed, one
+  at a time, only while you have a foe. See [Rotation](#rotation).
+- **Cooldowns card**: a bar per cooldown, for the Strigoi's powers and for spells from the tome
+  of spells, with the spell you have stored. See [Cooldowns](#cooldowns).
 - **Chat pane**: one tab per channel, plus an "All" tab. A tab that gets a message while you
   are reading another one lights up.
 - **GMCP log**, hidden by default (`nanny log`), for seeing the raw data.
@@ -98,6 +102,73 @@ set, and Mudlet reads the whole game with one setting, so some players' letters 
 wrong. NannyBasics therefore reads the game as Latin-1, which keeps every byte, and turns UTF-8 and
 Windows text back into the right letters; what you type goes out as Latin-1. This is on from the
 start. `nanny encoding off` puts back the encoding your profile had before.
+
+## Rotation
+
+For the Strigoi: repeating a power costs you, so you mix several. Write the commands yourself,
+exactly as you would type them, and save as many lists as you like:
+
+```
+nanny rot                                     your lists, the mode, and this help
+nanny rot set burn umbra, embrace, wildbound ghostveil
+nanny rot use burn                            pick a list
+nanny rot del burn                            delete one
+nanny rot off | key | auto                    stopped, one power per press, or on its own
+nanny rot go                                  send the next power, in key mode
+nanny rot bind F5                             the same on a key ('nanny rot bind off' removes it)
+nanny rot open wither                         start each fight with this ('nanny rot open off' stops)
+nanny rot trace                               print every send, landing and refusal, or stop
+```
+
+The strip on the guild pane shows the mode, the list and the next power. Left click steps the
+mode, right click the list. It needs the foe gauge and the guild pane on (`toggle gmcp foe`,
+`toggle strigoi gmcp`), and nothing goes out without a foe.
+
+A power counts as used when it shows up in your stack, and the next one goes out then. The game
+updates the stack about one round late, so a power is only given up on after three updates. If
+the game refuses a power, because it is on cooldown or you are out of spell points, the line
+is hidden and the next power is tried at once. Refused for being too soon, the same power is
+tried again a few times. The game says the same thing in a room without magic, so if every
+power in the list is refused that way, the strip says "blocked", the line is shown again, and
+only one try goes out every ten seconds until a power works or your foe changes.
+
+An opener belongs to the rotation that is picked when you set it. It goes out when you get a
+new foe, unless your stack already holds it, and does not move your place in the list. A new foe
+is one with another name: the next of several guards with the same name does not count unless
+the fight stopped in between.
+
+You can still type powers yourself during a fight. Whichever reaches the game first goes off,
+and the rotation carries on a round later.
+
+## Cooldowns
+
+A card with a bar for each cooldown: the Strigoi's powers, and spells chanted from the tome of
+spells. For the Strigoi, harvest's bonus to your stats gets a bar while it lasts, its length
+learned the same way as a cooldown's, from the game's line when a harvest works to its line
+when the power fades. A second harvest starts the bar again. For the
+tome it also shows the spell you have stored. Not every tome spell has a
+cooldown, so a spell gets a bar the first time the game refuses it as too soon, named by the word
+you chant. The cooldown starts when you release the spell, not when you chant it.
+
+The game does not say how long a cooldown lasts or when it ends, so the card learns from what you
+do. A chant refused as too soon shows the cooldown is longer than the time since you released the
+spell; a chant that works shows it is no longer than that. A refusal is free, so to learn a spell
+quickly, release it and try again every few seconds, or let `nanny tome probe <spell>` do that
+for you: after each release it chants the spell every three seconds until a chant works, hides
+the refusals, never chants while a spell is stored, and stops once the cooldown is known.
+Until the two limits are within five
+seconds of each other the bar says "maybe"; after that it is a plain countdown. If a spell is refused after its limit, something changed its length, and it is learned
+again.
+
+A cooldown that got shorter cannot show itself that way, since you have no reason to try early.
+After learning something that shortens cooldowns, `nanny tome relearn` (or `nanny tome relearn
+<spell>`) makes the bar say "maybe" from the release, and a few tries find the new length.
+
+`nanny tome` lists what has been learned. `nanny tome hide <spell>` hides a bar you do not want
+and keeps what was learned, `nanny tome show <spell>` brings it back, and `nanny tome forget
+<spell>` wipes what was learned. The word
+has to reach Mudlet as `chant <word>`, typed or from a Mudlet alias: a spell chanted through an
+in-game alias is stored without a name and gets no bar.
 
 ## Development
 

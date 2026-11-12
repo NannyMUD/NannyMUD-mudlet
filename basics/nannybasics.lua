@@ -89,8 +89,8 @@ N.comps = N.comps or {}                     -- name -> { box, hint_h }
 -- placement overrides these, and 'nanny reset' restores them.
 -- always the literal (not `or`): N survives a reload, and this is only a default seed now -- real
 -- placement lives in the coordinator -- so a default tweak must take effect on the next reload.
-N.place = { vitals = "bottom", channels = "c2", log = "c1", status = "c1", party = "c1", guild = "c2" }
-N.order = { "vitals", "guild", "channels", "status", "party", "log" }  -- stacking order within a cell
+N.place = { vitals = "bottom", channels = "c2", log = "c1", status = "c1", cooldowns = "c1", party = "c1", guild = "c2" }
+N.order = { "vitals", "guild", "channels", "status", "cooldowns", "party", "log" }  -- stacking order within a cell
 
 -- register a component once; opts.build(box) makes its widgets as children of box, and the
 -- optional opts.fit(w, h) lays them out in absolute px after every resize (a negative Geyser
@@ -136,7 +136,7 @@ local function slot_spec(nm, cell)
 end
 
 -- the title strip each pane is dragged by; vitals is a plain bar along the bottom
-N.TITLE = { channels = "Chat", status = "Score", party = "Party", log = "GMCP log" }
+N.TITLE = { channels = "Chat", status = "Score", party = "Party", log = "GMCP log", cooldowns = "Cooldowns" }
 
 -- Register every component as a slot in its cell. channels, status and party are always shown;
 -- the GMCP log toggles, and the guild pane waits for its guild's first message. Sizes come from
@@ -147,13 +147,15 @@ function N.relayout()
   for i, nm in ipairs(N.order) do
     local c = N.comps[nm]
     if c then
-      if (nm == "log" and not N.logOn) or (nm == "guild" and not N.guildName) then
+      if (nm == "log" and not N.logOn) or (nm == "guild" and not N.guildName)
+         or (nm == "cooldowns" and not N.cd_wanted()) then
         pcall(function() c.box:hide() end)
         MudletBorders.park("nanny:" .. nm)
       else
         local id = "nanny:" .. nm
         -- the guild pane's height depends on which guild it is drawing
         if nm == "guild" and N.guild_card_h then c.hint_h = N.guild_card_h() end
+        if nm == "cooldowns" then c.hint_h = N.cd_card_h() end
         local cross, hint = slot_spec(nm, MudletBorders.where(id) or
           MudletBorders.parked_cell(id) or N.place[nm])
         MudletBorders.slot("nanny:" .. nm, {
@@ -183,7 +185,7 @@ end
 -- 'nanny hide <pane>' / 'nanny show <pane>': the same as the X on its strip and the right-click menu
 function N.show_comp(word, on)
   local nm = N.comp_named(word)
-  if not nm then say("no pane '" .. tostring(word) .. "'. Try vitals, chat, score, party, guild or log.") return end
+  if not nm then say("no pane '" .. tostring(word) .. "'. Try vitals, chat, score, cooldowns, party, guild or log.") return end
   if type(MudletBorders) ~= "table" or not MudletBorders.close then say("this layout cannot hide panes.") return end
   if on then
     if nm == "log" then N.logOn = true end
@@ -784,7 +786,7 @@ local function guild_card_h()
     local extra = N.guildName == "Druid" and 1 or 0   -- the barkskin bar
     return row * (1 + bars_max() + extra) + math.floor(N.lh() * 1.35) * lines + 8
   end
-  return row * (4 + (N.gCdShown or 0)) + txt
+  return row * 5 + txt   -- 5: header, GP, penalty, wasp, rotation
 end
 N.guild_card_h = guild_card_h
 
@@ -991,10 +993,45 @@ end
 -- Druid buffs: barkskin, from its "on".
 N.cd = N.cd or timer_set("nanny_cooldowns.lua")
 N.buffs = N.buffs or timer_set("nanny_buffs.lua")
-N.gCdRows = N.gCdRows or {}
 local CD_SKIP = { wasp = true, totem = true }
 local function cd_skip(k)
   return CD_SKIP[k:match("^[^_]+")] or k:match("_cast_timestamp$")
+end
+
+-- Strigoi buffs the game sends no times for: harvest, on while any stat has a harvest bonus.
+-- A new harvest while one is on raises the bonus and starts the timer again.
+N.sbuffs = N.sbuffs or timer_set("nanny_strigoi_buffs.lua")
+function N.track_harvest(temp)
+  local sum = 0
+  for _, x in pairs(type(temp) == "table" and temp or {}) do sum = sum + math.abs(tonumber(x) or 0) end
+  -- the game's text runs ahead of its data: a bonus not yet sent, or one not yet taken away
+  local on = N.sbuffs.on.harvest
+  if sum == 0 then N.harvestFaded = nil end
+  if (sum == 0 and on and on.text and getEpoch() - on.t < 10) or (sum > 0 and N.harvestFaded) then return end
+  if on and sum > (N.harvestSum or 0) and getEpoch() - on.t > 5 then
+    N.sbuffs.on.harvest = { t = getEpoch(), clean = true }
+  end
+  N.harvestSum = sum
+  N.sbuffs.update(sum > 0 and { harvest = true } or {})
+end
+
+-- The game's own lines: a harvest that worked (worded by the stat gained) and its end. A gain
+-- line restarts the bar, since a second harvest can leave the bonus as it was; one a moment
+-- after the guild data started it is the same harvest.
+local HARVEST_LINES = "^(?:> )*(?:The (?:magical )?essence of the dead (fades|fills you|empowers you)"
+  .. "|You look lighter, your movements silent like the shadows!"
+  .. "|Your muscles swell with strength, gaining the power of the fallen!)"
+function N.harvest_line(what)
+  if N.guildName ~= "Strigoi" then return end
+  local now, on = getEpoch(), N.sbuffs.on.harvest
+  if what == "fades" then
+    N.sbuffs.update({})
+    N.harvestSum, N.harvestFaded = 0, true
+  else
+    N.harvestFaded = nil
+    if not on or now - on.t > 5 then N.sbuffs.on.harvest = { t = now, clean = true, text = true } end
+  end
+  N.draw_cooldowns()
 end
 
 function N.track_cooldowns(active)
@@ -1042,14 +1079,6 @@ function N.draw_bark()
   buff_bar(bark_row(), "barkskin", tonumber(bk.on) == 1, tonumber(bk.shimmering) == 1)
 end
 
-local function cd_row(i)
-  if N.gCdRows[i] then return N.gCdRows[i] end
-  local g = Geyser.Gauge:new({ name = "NannyGuildCd" .. i, x = 0, y = 0, width = "100%", height = 10 },
-    N.comps.guild.box)
-  N.gCdRows[i] = g
-  return g
-end
-
 -- an icon in a slot of fixed width, so text after it lines up whatever the glyph's width
 local SLOT_W = 24
 local function slotted(icon, text)
@@ -1058,46 +1087,401 @@ local function slotted(icon, text)
     "' align='center'>" .. icon .. "</td><td>&nbsp;" .. text .. "</td></tr></table>"
 end
 
--- A bar per cooldown, filling as it recharges: full when ready. Until a length is learned, a
--- running one counts up instead.
-function N.draw_cooldowns()
-  if not (N.comps.guild and N.comps.guild.box) then return end
-  -- the skip list also hides a length learned before a name joined it
-  local names, now = {}, getEpoch()
-  for _, k in ipairs(N.cd.names()) do if not cd_skip(k) then names[#names + 1] = k end end
-  for i, k in ipairs(names) do
-    local g, on, len = cd_row(i), N.cd.on[k], N.cd.length(k)
-    local icon, dark = icon_html(k, true), N.iconSet == "dark"
-    local label, col = k:gsub("_", " "), dark and "#3b2a55" or "#4a5a9a"
-    if not on then
-      col = dark and "#6e1c1c" or "#3a8f3a"
-      g:setValue(1, 1, slotted(icon, label .. "  ready"))
-    elseif len then
-      local left = math.max(0, math.ceil(on.t + len - now))
-      g:setValue(math.max(0, len - left), math.max(len, 1), slotted(icon, label .. "  " .. left .. "s"))
-    else
-      g:setValue(0, 1, slotted(icon, label .. "  " .. math.floor(now - on.t) .. "s, learning"))
-    end
-    if g.cdCol ~= col then g.cdCol = col ; gauge_style(g, col, dark and "#140e1a" or "#16182a") end
+-- ================= tome spells ====================================================
+-- The game never says when a chanted spell can be chanted again, so each length is bracketed
+-- from play: a refusal proves it is longer than the time since release, a chant that works
+-- proves it is no longer than that. Why: basics/README.md, Tome.
+local TOME_ANSWER, TOME_SLOP = 5, 2   -- seconds a chant may wait for its answer; timing jitter
+local TOME_TIGHT = 5                  -- limits this close are as good as knowing the length
+local TOME_LINES = "^(?:> )*(You feel the magic power surrounds you as you chant"
+  .. "|You feel mentally exhausted, and fail to memorize"
+  .. "|You point at .+ and\\b|(?:turn )?(?:the )?powers loose\\.$)"
+
+local function tome_load()
+  local t = { spells = {}, on = {} }
+  if type(table.load) == "function" then pcall(table.load, getMudletHomeDir() .. "/nanny_tome.lua", t) end
+  t.spells, t.on, t.hidden = t.spells or {}, t.on or {}, t.hidden or {}
+  return t
+end
+N.tome = N.tome or tome_load()
+local TM = N.tome
+TM.asked = TM.asked or {}             -- chants sent and not answered yet, oldest first
+TM.hidden = TM.hidden or {}           -- spells whose bar the player hid; what was learned is kept
+TM.probe = TM.probe or {}             -- spells being probed this session: word -> time of last chant
+N.cRows = N.cRows or {}
+
+local function tome_save()
+  if type(table.save) ~= "function" then return end
+  pcall(table.save, getMudletHomeDir() .. "/nanny_tome.lua",
+    { spells = TM.spells, on = TM.on, stored = TM.stored, hidden = TM.hidden })
+end
+
+local function tome_names()
+  local out = {}
+  for k in pairs(TM.spells) do out[#out + 1] = k end
+  table.sort(out)
+  return out
+end
+
+-- only spells the game has refused: nothing else proves a spell has a cooldown at all
+local function tome_bars()
+  local out = {}
+  for _, w in ipairs(tome_names()) do
+    local s = TM.spells[w]
+    if (s.cd or s.lo) and not TM.hidden[w] then out[#out + 1] = w end
   end
-  if #names ~= (N.gCdShown or 0) then N.gCdShown = #names ; N.relayout() end   -- a new row
+  return out
+end
+
+local function tome_used() return TM.stored ~= nil or next(TM.spells) ~= nil end
+
+-- the Strigoi's bars; the skip list also hides a length learned before a name joined it
+local function strigoi_cds()
+  local names = {}
+  if N.guildName ~= "Strigoi" then return names end
+  for _, k in ipairs(N.cd.names()) do if not cd_skip(k) then names[#names + 1] = k end end
+  return names
+end
+
+-- the Strigoi's buffs running now: a bar only while one is on
+local function strigoi_buffs()
+  local names = {}
+  if N.guildName ~= "Strigoi" then return names end
+  for _, k in ipairs(N.sbuffs.names()) do if N.sbuffs.on[k] then names[#names + 1] = k end end
+  return names
+end
+
+function N.cd_wanted() return tome_used() or #strigoi_cds() > 0 or #strigoi_buffs() > 0 end
+
+-- the space between two groups of bars on the Cooldowns card
+local CD_GAP = 4
+
+function N.cd_card_h()
+  local row = guild_dims()
+  local groups = 0
+  for _, k in ipairs({ #strigoi_buffs(), #strigoi_cds(), #tome_bars() }) do if k > 0 then groups = groups + 1 end end
+  return row * ((tome_used() and 1 or 0) + #strigoi_cds() + #strigoi_buffs() + #tome_bars())
+    + math.max(0, groups - 1) * CD_GAP + 4
+end
+
+-- every command going out; a line can hold several, split by the game on ';'
+function N.tome_sent(_, cmd)
+  for part in tostring(cmd or ""):gmatch("[^;]+") do
+    local w = part:match("^%s*[Cc]hant%s+(.-)%s*$")
+    if w and w ~= "" then TM.asked[#TM.asked + 1] = { word = w:lower(), t = getEpoch(), probe = N._probing } end
+  end
+end
+
+-- the chant this answer belongs to, and its record; nil if none was seen recently
+local function tome_take()
+  local now = getEpoch()
+  while TM.asked[1] and now - TM.asked[1].t > TOME_ANSWER do table.remove(TM.asked, 1) end
+  local a = table.remove(TM.asked, 1)
+  return a and a.word, a
+end
+
+local function tome_worked(s, e)
+  s.hi = math.min(s.hi or math.huge, math.ceil(e))
+  if e < (s.lo or 0) - TOME_SLOP then s.lo = nil
+  elseif (s.lo or 0) > s.hi then s.lo = s.hi end
+end
+
+local function tome_refused(s, e)
+  s.lo = math.max(s.lo or 0, math.floor(e))
+  if s.hi and e > s.hi + TOME_SLOP then s.hi = nil
+  elseif s.hi and s.hi < s.lo then s.hi = s.lo end
+end
+
+function N.tome_line(text)
+  local now = getEpoch()
+  if text:find("^You feel the magic") then
+    local w = tome_take()
+    TM.stored = w or "?"
+    if w then
+      if TM.probe[w] then TM.probe[w].miss = 0 end
+      TM.spells[w] = TM.spells[w] or {}
+      if TM.on[w] then tome_worked(TM.spells[w], now - TM.on[w]) ; TM.on[w] = nil end
+    end
+  elseif text:find("^You feel mentally") then
+    local w, a = tome_take()
+    if not w then return end
+    if TM.probe[w] then TM.probe[w].miss = 0 end
+    -- a probe's refusal every few seconds would bury the game's text
+    if a.probe and type(deleteLine) == "function" then deleteLine() end
+    local s = TM.spells[w] or {}
+    TM.spells[w], s.cd = s, true
+    if TM.on[w] then tome_refused(s, now - TM.on[w]) end
+  else
+    local w = TM.stored
+    if not w then return end
+    TM.stored = nil
+    if w ~= "?" then
+      TM.spells[w] = TM.spells[w] or {}
+      TM.on[w] = now
+    end
+  end
+  tome_save()
+  N.draw_cooldowns()
+end
+
+-- ---- probing: chant a released spell every few seconds until a chant works ----
+-- It never chants while a spell is stored, which a chant that works would replace.
+local PROBE_EVERY, PROBE_MISS = 3, 2
+
+local function learned(s) return s and s.lo and s.hi and s.hi - s.lo <= TOME_TIGHT end
+
+local function probe_stop(w, why)
+  TM.probe[w] = nil
+  if why then say(why) end
+  if not next(TM.probe) and N.tProbeT then pcall(killTimer, N.tProbeT) ; N.tProbeT = nil end
+end
+
+local function asked_for(w)
+  for _, a in ipairs(TM.asked) do if a.word == w then return true end end
+  return false
+end
+
+function N.tome_probe_tick()
+  local now = getEpoch()
+  -- a probe's chant with no answer at all: no tome, asleep, or a word the game does not know
+  for i = #TM.asked, 1, -1 do
+    local a = TM.asked[i]
+    if a.probe and now - a.t > TOME_ANSWER then
+      table.remove(TM.asked, i)
+      local p = TM.probe[a.word]
+      if p then
+        p.miss = p.miss + 1
+        if p.miss >= PROBE_MISS then probe_stop(a.word, "probing " .. a.word .. " stopped: the game did not answer its chant.") end
+      end
+    end
+  end
+  for w, p in pairs(TM.probe) do
+    local s = TM.spells[w]
+    if learned(s) then
+      probe_stop(w, string.format("%s learned: its cooldown is %d to %d seconds. Probing stopped.", w, s.lo, s.hi))
+    elseif TM.on[w] and TM.stored == nil and now - p.last >= PROBE_EVERY and not asked_for(w) then
+      p.last = now
+      N._probing = true
+      send("chant " .. w, false)
+      N._probing = nil
+    end
+  end
+end
+
+local function probe_start(w)
+  TM.probe[w] = { last = 0, miss = 0 }
+  if not N.tProbeT and type(tempTimer) == "function" then
+    N.tProbeT = tempTimer(1, function() N.tome_probe_tick() end, true)
+  end
+end
+
+-- An icon per tome spell, found by any word of its name, so whichever word is chanted
+-- ("golden" or "touch") finds it. Emoji only where no variation selector is needed.
+N.TOME_ICONS = {
+  fireball = "🔥", farflung = "🔥", fearful = "😨", fear = "😨", sword = "🤺", instant = "🤺",
+  sensitive = "👀", combat = "😤", fury = "😤", heal = "🩹", others = "🩹", stamina = "🏃",
+  unnatural = "🏃", water = "🐟", breathing = "🐟", illusion = "🪞", multiplicative = "🪞",
+  delay = "⌛", red = "⌛", midas = "🪙", golden = "🪙", touch = "🪙", curse = "🧿",
+  slow = "🐌", thunder = "🔊", deafening = "🔊", control = "🎯",
+  amplifier = "📢", damage = "📢", duplicator = "🔁", hastiness = "💨", haste = "💨",
+  ice = "🧊", arrow = "🧊", iron = "👊", fist = "👊", lightning = "⚡", mastery = "🎓",
+  rain = "☔", targeted = "☔", thunderbolt = "💥",
+}
+-- the dark set's plain glyphs, drawn in bone on the bar like the Strigoi's
+N.TOME_DARK = {
+  fireball = "✹", farflung = "✹", fearful = "⊗", fear = "⊗", sword = "†", instant = "†",
+  sensitive = "◉", combat = "✶", fury = "✶", heal = "✚", others = "✚", stamina = "⇑",
+  unnatural = "⇑", water = "≈", breathing = "≈", illusion = "❖", multiplicative = "❖",
+  delay = "⧖", red = "⧖", midas = "◈", golden = "◈", touch = "◈", curse = "☋",
+  slow = "∿", thunder = "❂", deafening = "❂", control = "⌖",
+  amplifier = "⊕", damage = "⊕", duplicator = "⧉", hastiness = "»", haste = "»",
+  ice = "✧", arrow = "✧", iron = "■", fist = "■", lightning = "↯", mastery = "♛",
+  rain = "⁞", targeted = "⁞", thunderbolt = "☇",
+}
+local function tome_icon(w)
+  local k = tostring(w):lower()
+  local t = N.iconSet == "dark" and N.TOME_DARK or N.TOME_ICONS
+  local icon = t[k]
+  if not icon then
+    for x in k:gmatch("%a+") do if t[x] then icon = t[x] ; break end end
+  end
+  if icon and N.iconSet == "dark" then
+    return "<span style='color:" .. BONE .. ";'>" .. icon .. TEXT_FORM .. "</span>"
+  end
+  return icon
+end
+
+-- value, max, text, colour and ground of one spell's bar
+local function tome_bar(w, now)
+  local on, s = TM.on[w], TM.spells[w] or {}
+  local e, lo, hi, g = on and now - on, s.lo or 0, s.hi, "#16182a"
+  local icon = tome_icon(w)
+  local function label(t) return slotted(icon, w .. "  " .. t) end
+  if not on or (hi and e >= hi) then return 1, 1, label("ready"), "#3a8f3a", g end
+  local sure = hi and hi - lo <= TOME_TIGHT and hi or lo
+  if e < sure then return e, hi or lo, label(math.ceil(sure - e) .. "s"), "#4a5a9a", g end
+  if hi then return e, hi, label("maybe, sure in " .. math.ceil(hi - e) .. "s"), "#b07a20", g end
+  return 0, 1, label(math.floor(e) .. "s, learning"), "#4a5a9a", g
+end
+
+-- the same for a Strigoi power, whose start and stop the game reports
+local function strigoi_bar(k, now)
+  local on, len = N.cd.on[k], N.cd.length(k)
+  local icon, dark = icon_html(k, true), N.iconSet == "dark"
+  local label, ground = k:gsub("_", " "), dark and "#140e1a" or "#16182a"
+  local running = dark and "#3b2a55" or "#4a5a9a"
+  if not on then return 1, 1, slotted(icon, label .. "  ready"), dark and "#6e1c1c" or "#3a8f3a", ground end
+  if len then
+    local left = math.ceil(on.t + len - now)
+    if left < 0 then return len, len, slotted(icon, label .. "  " .. -left .. "s over"), running, ground end
+    return len - left, len, slotted(icon, label .. "  " .. left .. "s"), running, ground
+  end
+  return 0, 1, slotted(icon, label .. "  " .. math.floor(now - on.t) .. "s, learning"), running, ground
+end
+
+-- a Strigoi buff: empties as it wears off once its length is learned, counts up until then
+local function sbuff_bar(k, now)
+  local run, len = N.sbuffs.on[k], N.sbuffs.length(k)
+  local icon, col, ground = icon_html(k, true), "#2f6f9a", "#101c26"
+  if len then
+    local left = math.ceil(run.t + len - now)
+    -- still on past what was learned: the length varies, so say by how much
+    if left < 0 then return 0, len, slotted(icon, k .. " bonus  " .. -left .. "s over"), col, ground end
+    return left, len, slotted(icon, k .. " bonus  " .. left .. "s"), col, ground
+  end
+  -- counting up only from a start that was seen
+  local up = run.clean and ("  " .. math.floor(now - run.t) .. "s, learning") or "  on"
+  return 1, 1, slotted(icon, k .. " bonus" .. up), col, ground
+end
+
+local function cd_row(i)
+  if N.cRows[i] then return N.cRows[i] end
+  local g = Geyser.Gauge:new({ name = "NannyCd" .. i, x = 0, y = 0, width = "100%", height = 10 },
+    N.comps.cooldowns.box)
+  N.cRows[i] = g
+  return g
+end
+
+local function cd_set(g, v, max, text, col, ground)
+  if text ~= g.cdText then g.cdText = text ; g:setValue(v, math.max(max, 1), text) end
+  if col ~= g.cdCol then g.cdCol = col ; gauge_style(g, col, ground) end
+end
+
+-- A bar per cooldown, filling as it recharges: full when ready.
+function N.draw_cooldowns()
+  if not (N.comps.cooldowns and N.tStored) then return end
+  local now, n = getEpoch(), 0
+  -- buffs, then the Strigoi's cooldowns, then the tome's; a gap where the group changes
+  local group = {}
+  for _, k in ipairs(strigoi_buffs()) do n = n + 1 ; group[n] = 1 ; cd_set(cd_row(n), sbuff_bar(k, now)) end
+  for _, k in ipairs(strigoi_cds()) do n = n + 1 ; group[n] = 2 ; cd_set(cd_row(n), strigoi_bar(k, now)) end
+  for _, w in ipairs(tome_bars()) do n = n + 1 ; group[n] = 3 ; cd_set(cd_row(n), tome_bar(w, now)) end
+  N.cdGroup = group
+  local stored = TM.stored == "?" and "a spell" or TM.stored
+  local head = "Stored: " .. (stored and ("<b>" .. esc(stored) .. "</b>") or "nothing")
+  if head ~= N.tHead then N.tHead = head ; N.tStored:echo(head) end
+  local shape = n .. tostring(tome_used()) .. table.concat(group)
+  if shape ~= N.cdShape then N.cdShape, N.cdShown = shape, n ; N.relayout() end
+end
+
+local function build_cooldowns(box)
+  N.tStored = Geyser.Label:new({ name = "NannyTomeStored", x = 0, y = 0, width = "100%", height = 10 }, box)
+  N.tStored:setStyleSheet("background-color: #16131f; color: #e6e0f0; padding-left: 6px; "
+    .. "qproperty-alignment: 'AlignLeft | AlignVCenter';")
+end
+
+local function fit_cooldowns(_, h)
+  if not N.tStored then return end
+  local row, rows = guild_dims(), {}
+  if tome_used() then rows[1] = { N.tStored, row - 2, row }
+  else pcall(function() N.tStored:hide() end) end
+  for i, g in ipairs(N.cRows) do
+    if i <= (N.cdShown or 0) then
+      local next_g = (N.cdGroup or {})[i + 1]
+      rows[#rows + 1] = { g, row - 2, row + ((next_g and next_g ~= N.cdGroup[i]) and CD_GAP or 0) }
+    else pcall(function() g:hide() end) end
+  end
+  fit_rows(h, rows)
+end
+
+function N.tome_cmd(rest)
+  local verb, word = rest:match("^(%S+)%s*(.-)%s*$")
+  word = (word or ""):lower()
+  if verb == "relearn" then
+    local any_spell = false
+    for w, s in pairs(TM.spells) do
+      if word == "" or w == word then s.lo, any_spell = nil, true end
+    end
+    if not any_spell then say("no bar called '" .. word .. "'.") return end
+    tome_save()
+    N.draw_cooldowns()
+    say((word == "" and "every spell" or word) .. ": try it early, the bar will say maybe from the release.")
+    return
+  elseif verb == "forget" and word ~= "" then
+    if not TM.spells[word] then say("no bar called '" .. word .. "'.") return end
+    TM.spells[word], TM.on[word], TM.hidden[word] = nil, nil, nil
+    probe_stop(word)
+    tome_save()
+    N.draw_cooldowns()
+    say("forgot " .. word .. ".")
+    return
+  elseif (verb == "hide" or verb == "show") and word ~= "" then
+    if not TM.spells[word] then say("no spell called '" .. word .. "' has been chanted.") return end
+    TM.hidden[word] = verb == "hide" or nil
+    tome_save()
+    N.draw_cooldowns()
+    say(word .. (verb == "hide" and " hidden; what was learned is kept. 'nanny tome show " .. word .. "' brings it back."
+      or " shown again."))
+    return
+  elseif verb == "probe" and word ~= "" then
+    if word == "off" then
+      for w in pairs(TM.probe) do probe_stop(w) end
+      say("probing stopped.")
+      return
+    end
+    if learned(TM.spells[word]) then say(word .. " is already learned; 'nanny tome relearn " .. word .. "' first.") return end
+    probe_start(word)
+    say("probing " .. word .. ": after you release it, it is chanted every " .. PROBE_EVERY .. " seconds until a chant"
+      .. " works, never while a spell is stored. It stops once the cooldown is known; 'nanny tome probe off' stops it now.")
+    return
+  end
+  say("stored: " .. tostring(TM.stored or "nothing") .. ". 'nanny help tome' for the commands.")
+  for _, w in ipairs(tome_names()) do
+    local s = TM.spells[w]
+    say(w .. ": " .. (s.hi and ("at most " .. s.hi .. "s") or "no upper limit yet") ..
+      (s.lo and (", more than " .. s.lo .. "s") or "") ..
+      ((s.cd or s.lo) and "" or ", never refused so no bar") ..
+      (TM.hidden[w] and ", hidden" or "") .. (TM.probe[w] and ", probing" or ""))
+  end
+end
+
+-- The rotation strip, made on first use: a reload keeps the pane built by the copy before it.
+local function rot_row()
+  if not N.gRot then
+    N.gRot = Geyser.Label:new({ name = "NannyGuildRot", x = 0, y = 0, width = "100%", height = 10 },
+      N.comps.guild.box)
+    N.gRot:setStyleSheet("background-color: #1a1a24; color: #d0d0d0; padding-left: 6px; "
+      .. "qproperty-alignment: 'AlignLeft | AlignVCenter';")
+    N.gRot:setClickCallback(function(ev) N.rot_click(ev) end)
+    N.rot_draw()
+  end
+  return N.gRot
 end
 
 local function fit_guild(w, h)
   if not N.gTxt then return end
   N.gW, N.gH = w, h
   local row = guild_dims()
-  local strigoi = { N.gGp, N.gPen, N.gWasp }
+  local strigoi = { N.gGp, N.gPen, N.gWasp, rot_row() }
   local rows = { { N.gHead, row - 2, row } }
   if TEXT_GUILDS[N.guildName] then
     local all = { N.gBark }
-    for _, list in ipairs({ strigoi, N.gCdRows, N.gPetRows }) do
+    for _, list in ipairs({ strigoi, N.gPetRows }) do
       for _, gg in ipairs(list) do all[#all + 1] = gg end
     end
     for _, gg in pairs(all) do pcall(function() gg:hide() end) end
   elseif BAR_GUILDS[N.guildName] then
     for _, gg in ipairs(strigoi) do pcall(function() gg:hide() end) end
-    for _, r in ipairs(N.gCdRows) do pcall(function() r:hide() end) end
     for i, r in ipairs(N.gPetRows) do
       if i <= (N.gPetsShown or 0) then rows[#rows + 1] = { r, row - 2, row }
       else pcall(function() r:hide() end) end
@@ -1110,10 +1494,6 @@ local function fit_guild(w, h)
     for _, r in ipairs(N.gPetRows) do pcall(function() r:hide() end) end
     if N.gBark then pcall(function() N.gBark:hide() end) end
     for _, gg in ipairs(strigoi) do rows[#rows + 1] = { gg, row - 2, row } end
-    for i, r in ipairs(N.gCdRows) do
-      if i <= (N.gCdShown or 0) then rows[#rows + 1] = { r, row - 2, row }
-      else pcall(function() r:hide() end) end
-    end
   end
   fit_rows(h, rows, N.gTxt)
 end
@@ -1160,11 +1540,12 @@ function N.guild(name, v)
   local gname = name:match("^Guild%.(.+)$") or name
   if gname ~= N.guildName then
     N.gd, N.guildName = {}, gname
+    N.draw_cooldowns()                 -- another guild's bars must not stay on the card
     N.relayout()                       -- first message (or a new guild): place the pane, retitle it
   end
   -- Owl is Guild.Druid.Owl's own message, kept under Guild.Druid by Mudlet
   for k, val in pairs(v) do if k ~= "Owl" then N.gd[k] = val end end
-  if gname == "Strigoi" then N.track_cooldowns(v.active) end
+  if gname == "Strigoi" then N.track_cooldowns(v.active) ; N.track_harvest(N.gd.temp) end
   local g = N.gd
   if gname == "Vampire" then N.blood(g.bp, g.maxbp) end
   if not N.gTxt then return end
@@ -1473,6 +1854,354 @@ function N.render_alchemy(g)
     H, #pots > 0 and table.concat(pots, " &#183; ") or "none", table.concat(prow)))
 end
 
+-- ================= Strigoi power rotation =========================================
+-- One power at a time, only with a foe: the next one goes out when the last shows up in the
+-- stack, or the game refuses it. Variants, mode and key are kept in the profile.
+
+local ROT_WAIT, ROT_SOON, ROT_PAUSE, ROT_BLOCK, ROT_STALE, ROT_ANSWER = 3, 3, 1, 10, 10, 1
+local ROT_REFUSED = "^(?:> )*(The power cannot take hold again while"
+  .. "|You call upon the shadows, but the curse"
+  .. "|You are mentally weak to do that\\."
+  .. "|Something far powerful than you won't allow that so fast\\.)"
+
+N.rot = N.rot or {}
+local R = N.rot
+local function rot_file() return getMudletHomeDir() .. "/nanny_rotation.lua" end
+if not R.saved then
+  R.saved = {}
+  if type(table.load) == "function" then pcall(table.load, rot_file(), R.saved) end
+  R.saved.variants = R.saved.variants or {}
+  R.saved.mode = R.saved.mode or "off"
+end
+R.saved.openers = R.saved.openers or {}
+local function rot_save()
+  if type(table.save) == "function" then pcall(table.save, rot_file(), R.saved) end
+end
+
+local function rot_clear()
+  R.soon, R.passed, R.capped, R.blocked, R.holdUntil, R.note = 0, 0, false, nil, nil, nil
+end
+if R.soon == nil then rot_clear() end
+R.i = R.i or 1
+
+local function rot_list() return R.saved.variants[R.saved.current or ""] or {} end
+local function rot_step()
+  R.i = R.i % math.max(#rot_list(), 1) + 1
+  R.soon = 0
+end
+local function first_word(s) return tostring(s):lower():match("^%s*(%S+)") or "" end
+local function copy_list(t)
+  local out = {}
+  for i, x in ipairs(type(t) == "table" and t or {}) do out[i] = x end
+  return out
+end
+
+-- What was pushed onto a first-in-first-out stack between two looks at it.
+local function stack_new(old, new)
+  for k = 0, #old do
+    local same = true
+    for j = 1, math.min(#old - k, #new) do
+      if old[k + j] ~= new[j] then same = false ; break end
+    end
+    if same then
+      local out = {}
+      for j = #old - k + 1, #new do out[#out + 1] = new[j] end
+      return out
+    end
+  end
+end
+
+function N.rot_draw()
+  if not N.gRot then return end
+  local S, list = R.saved, rot_list()
+  if #list == 0 then
+    N.gRot:echo("<span style='color:#777777;'>Rotation: none set. 'nanny rot' for how.</span>")
+    return
+  end
+  local COL = { off = "#777777", key = "#e0b64a", auto = "#70c070" }
+  local detail
+  if R.blocked then detail = "<span style='color:#d06060;'>blocked: " .. esc(R.blocked) .. "</span>"
+  elseif R.note then detail = "<span style='color:#e0a030;'>" .. esc(R.note) .. "</span>"
+  elseif R.pending then detail = "sent: " .. esc(R.pending.cmd)
+  else detail = "next: " .. esc(list[(R.i - 1) % #list + 1]) end
+  N.gRot:echo(string.format("<b style='color:%s;'>%s</b> &#183; %s &#183; %s",
+    COL[S.mode] or "#777777", S.mode, esc(S.current), detail))
+end
+
+local function rot_trace(s)
+  if R.trace then cecho("\n<grey>[rot " .. string.format("%.1f", getEpoch() % 1000) .. "] " .. s .. "<reset>\n") end
+end
+
+local function rot_go()
+  local list = rot_list()
+  if N.guildName ~= "Strigoi" or R.saved.mode == "off" or not R.foe or R.pending or #list == 0 then return end
+  if R.holdUntil and getEpoch() < R.holdUntil then return end
+  R.holdUntil = nil
+  R.i = (R.i - 1) % #list + 1
+  -- a new foe: the opener first, unless the stack already holds it
+  local cmd, opener = R.opening and R.saved.openers[R.saved.current], false
+  R.opening = false
+  if cmd then
+    local word = first_word(cmd)
+    opener = true
+    for _, x in ipairs(copy_list(N.gd.stack)) do
+      if first_word(x) == word then cmd, opener = nil, false ; break end
+    end
+  end
+  if not cmd then
+    -- never the same power twice running, even when it is the only one the game will take
+    if #list > 1 and list[R.i] == R.last then rot_step() end
+    cmd = list[R.i]
+  end
+  R.pending = { cmd = cmd, word = first_word(cmd), stack = copy_list(N.gd.stack), beats = 0, t = getEpoch(),
+                opener = opener }
+  send(cmd, false)
+  rot_trace("sent: " .. cmd)
+  N.rot_draw()
+end
+local function rot_auto() if R.saved.mode == "auto" then rot_go() end end
+
+-- The power out is done with, whether or not the stack ever showed it.
+local function rot_done()
+  local p = R.pending
+  R.last, R.pending = p.cmd, nil
+  if p.opener then R.soon = 0 else rot_step() end
+end
+
+local function rot_no_reply()
+  rot_trace("no reply: " .. R.pending.cmd)
+  R.note = "no reply: " .. R.pending.cmd
+  rot_done()
+end
+
+-- How many refusals make a whole pass: the last power is not tried again.
+local function rot_pass_len()
+  local list = rot_list()
+  for _, c in ipairs(list) do
+    if c == R.last and #list > 1 then return #list - 1 end
+  end
+  return #list
+end
+
+-- A Guild.Strigoi message: did the power land? It shows a message after the SP is spent, so
+-- silence is only given up on after several, or a power still landing would be sent twice.
+function N.rot_guild(v)
+  local p = R.pending
+  if not p then return rot_auto() end
+  if type(v.stack) == "table" then
+    local fresh = stack_new(p.stack, v.stack)
+    p.stack = copy_list(v.stack)
+    for _, x in ipairs(fresh) do
+      rot_trace("stack got: " .. tostring(x) .. " (waiting for " .. p.cmd .. ")")
+      if first_word(x) == p.word then
+        rot_clear()
+        rot_done()
+        rot_auto()
+        return N.rot_draw()
+      end
+    end
+  end
+  p.beats = p.beats + 1
+  if p.beats >= ROT_WAIT then rot_no_reply() ; rot_auto() end
+  N.rot_draw()
+end
+
+-- Hides the rest of a wrapped sentence (at most three lines in all), then a bare prompt.
+local function hide_tail(done, n)
+  tempLineTrigger(1, 1, function()
+    if done then
+      if line:match("^>%s*$") then deleteLine() end
+    else
+      deleteLine()
+      hide_tail(n >= 2 or line:match("%.%s*$") ~= nil, n + 1)
+    end
+  end)
+end
+
+-- "Too soon" also means a room without magic: a few tries on one power, then the rest get one
+-- each, and a whole list of refusals after that stops hiding the line and slows to a probe.
+function N.rot_refusal(text)
+  if not R.pending then return end
+  -- it answers what the player just typed, and the power out may yet land
+  if R.typedAt and getEpoch() - R.typedAt < ROT_ANSWER then
+    rot_trace("not ours, just typed: " .. text)
+    return
+  end
+  rot_trace("refused " .. R.pending.cmd .. ": " .. text)
+  if not R.blocked then
+    deleteLine()
+    hide_tail(line:match("%.%s*$") ~= nil, 1)
+  end
+  local opener = R.pending.opener
+  R.pending = nil
+  -- an opener is extra: too soon gets the usual retries, anything else just drops it
+  if opener then
+    if text:find("^Something") and R.soon + 1 < ROT_SOON then
+      R.soon, R.opening = R.soon + 1, true
+      return N.rot_draw()
+    end
+    R.soon = 0
+    rot_go()
+    return N.rot_draw()
+  end
+  if R.blocked then
+    R.holdUntil = getEpoch() + ROT_BLOCK
+    rot_step()
+    return N.rot_draw()
+  end
+  local soon = text:find("^Something") ~= nil
+  if soon and not R.capped then
+    R.soon = R.soon + 1
+    if R.soon < ROT_SOON then return N.rot_draw() end
+    R.capped = true
+  end
+  R.passed = R.passed + 1
+  rot_step()
+  if R.passed >= rot_pass_len() then
+    if R.capped then R.blocked = text end
+    R.holdUntil = getEpoch() + (R.capped and ROT_BLOCK or ROT_PAUSE)
+    R.passed, R.capped = 0, false
+    return N.rot_draw()
+  end
+  rot_go()
+  N.rot_draw()
+end
+
+-- Every command going out, the rotation's own included.
+function N.rot_sent(_, cmd)
+  cmd = (tostring(cmd or ""):gsub("%s+$", ""))
+  if not (R.pending and cmd == R.pending.cmd) then R.typedAt = getEpoch() end
+end
+
+-- Char.Foe: no foe stops everything; a new one lifts what the last one blocked.
+function N.rot_foe(v)
+  local name = type(v) == "table" and v.name ~= "" and v.name or nil
+  if name == R.foe then return end
+  R.foe = name
+  rot_trace("foe: " .. tostring(name))
+  -- a power that killed the foe never reaches the stack in time
+  if not name and R.pending then rot_done() end
+  R.opening = name ~= nil
+  rot_clear()
+  rot_auto()
+  N.rot_draw()
+end
+
+function N.rot_tick()
+  local now = getEpoch()
+  if R.pending and now - R.pending.t > ROT_STALE then rot_no_reply() ; N.rot_draw() end
+  if R.holdUntil and now >= R.holdUntil then rot_auto() end
+end
+
+function N.rot_press()
+  if R.saved.mode == "key" then rot_go() end
+end
+
+local function rot_mode(m)
+  R.saved.mode, R.pending = m, nil
+  rot_clear()
+  rot_save()
+  rot_auto()
+  N.rot_draw()
+end
+
+local function rot_names()
+  local names = {}
+  for k in pairs(R.saved.variants) do names[#names + 1] = k end
+  table.sort(names)
+  return names
+end
+
+local function rot_use(name)
+  R.saved.current, R.pending, R.i, R.last = name, nil, 1, nil
+  rot_clear()
+  rot_save()
+  N.rot_draw()
+end
+
+-- The strip: left click steps the mode, right click the variant.
+function N.rot_click(ev)
+  if type(ev) == "table" and ev.button == "RightButton" then
+    local names = rot_names()
+    if #names == 0 then return end
+    local at_i = 0
+    for i, k in ipairs(names) do if k == R.saved.current then at_i = i end end
+    rot_use(names[at_i % #names + 1])
+  else
+    rot_mode(({ off = "key", key = "auto", auto = "off" })[R.saved.mode] or "off")
+  end
+end
+
+local function rot_bind()
+  if N.rotKey then pcall(killKey, N.rotKey) ; N.rotKey = nil end
+  local k = R.saved.key
+  if k and type(tempKey) == "function" and type(mudlet) == "table" and mudlet.key and mudlet.key[k] then
+    N.rotKey = tempKey(mudlet.key[k], "NannyBasics.rot_press()")
+  end
+end
+
+function N.rot_cmd(arg)
+  local verb, rest = arg:match("^(%S+)%s*(.*)$")
+  local S = R.saved
+  if verb == "set" then
+    local name, cmds = rest:match("^(%S+)%s+(.+)$")
+    if not name or name:find(",", 1, true) then
+      say("the first word is the rotation's name: nanny rot set <name> <command>, <command>, ...")
+      return
+    end
+    local list = {}
+    for c in cmds:gmatch("[^,]+") do
+      c = c:gsub("^%s+", ""):gsub("%s+$", "")
+      if c ~= "" then list[#list + 1] = c end
+    end
+    S.variants[name] = list
+    rot_use(name)
+    say("rotation " .. name .. ": " .. table.concat(list, ", ") .. ".")
+  elseif verb == "use" then
+    if not S.variants[rest] then say("no rotation called '" .. rest .. "'.") return end
+    rot_use(rest)
+  elseif verb == "del" then
+    if not S.variants[rest] then say("no rotation called '" .. rest .. "'.") return end
+    S.variants[rest], S.openers[rest] = nil, nil
+    if S.current == rest then rot_use(rot_names()[1]) else rot_save() end
+    say("rotation " .. rest .. " deleted.")
+  elseif verb == "off" or verb == "key" or verb == "auto" then
+    rot_mode(verb)
+  elseif verb == "go" then
+    N.rot_press()
+  elseif verb == "open" then
+    if not S.current then say("pick a rotation first.") return end
+    if rest == "" then say("usage: nanny rot open <command>, or nanny rot open off") return end
+    S.openers[S.current] = rest ~= "off" and rest or nil
+    rot_save()
+    say(S.openers[S.current] and ("rotation " .. S.current .. " opens each fight with " .. rest ..
+        ", unless your stack already holds it.") or ("rotation " .. S.current .. ": no opener."))
+  elseif verb == "trace" then
+    R.trace = not R.trace
+    say("rotation trace " .. (R.trace and "on." or "off."))
+  elseif verb == "bind" then
+    local k = rest:upper()
+    if k == "OFF" then S.key = nil
+    elseif type(mudlet) == "table" and mudlet.key and mudlet.key[k] then S.key = k
+    else say("usage: nanny rot bind <key, such as F5> or nanny rot bind off") return end
+    rot_save()
+    rot_bind()
+    say(S.key and ("key " .. S.key .. " sends the next power while the mode is key.") or "key unbound.")
+  else
+    say("rotation mode: " .. S.mode .. (S.key and (", key " .. S.key) or "") .. ".")
+    for _, k in ipairs(rot_names()) do
+      say((k == S.current and "* " or "  ") .. k .. ": " .. table.concat(S.variants[k], ", ") ..
+          (S.openers[k] and ("  (opens with " .. S.openers[k] .. ")") or ""))
+    end
+    say("'nanny rot set <name> <command>, <command>, ...' saves a rotation, 'nanny rot use <name>' " ..
+        "picks one, 'nanny rot del <name>' deletes one, 'nanny rot open <command>' starts each fight " ..
+        "with that command unless your stack holds it ('nanny rot open off' stops that)." ..
+        "\n  'nanny rot off|key|auto': auto sends powers on its own during a fight; key sends one " ..
+        "for each 'nanny rot go'.\n  'nanny rot bind F5' puts that on a key. On the guild pane's " ..
+        "strip, left click steps the mode and right click the rotation.")
+  end
+end
+
 -- ================= wiring =========================================================
 
 function N.on_event(_, ev)
@@ -1480,12 +2209,15 @@ function N.on_event(_, ev)
   local v = at(name)
   log(name, v)
   if name == "Char.Vitals" then N.vitals(v)
-  elseif name == "Char.Foe" then N.foe_show(v)
+  elseif name == "Char.Foe" then N.foe_show(v) ; N.rot_foe(v)
   elseif name == "Comm.Channel.Text" then N.channel(v)
   elseif name == "Char.Status" then N.status(v) ; N.status_consume(v)
   elseif name == "Group.Info" then N.party(v)
   elseif name == "Guild.Druid.Owl" then N.owl(v)
-  elseif N.GUILD_PANES[name:match("^Guild%.(.+)$") or ""] then N.guild(name, v) end
+  elseif N.GUILD_PANES[name:match("^Guild%.(.+)$") or ""] then
+    N.guild(name, v)
+    if name == "Guild.Strigoi" and type(v) == "table" then N.rot_guild(v) end
+  end
 end
 
 -- Guild.Druid.Owl: what the owl sees while it watches where the druid is not, "with the line
@@ -1795,6 +2527,10 @@ function N.cmd(arg)
     say("layout: " .. table.concat(parts, ", ") .. (N.logOn and "  (log shown)" or "  (log hidden)"))
   elseif verb == "update" then
     N.update(false, rest)
+  elseif verb == "rot" then
+    N.rot_cmd(rest)
+  elseif verb == "tome" then
+    N.tome_cmd(rest)
   elseif arg == "hello" then
     N.hello()
     say("asked the game for: " .. table.concat(N.WANT, ", "))
@@ -1882,6 +2618,7 @@ N._lh = nil   -- recompute the text-row height on each load (code or font may ha
 component("vitals", { build = build_vitals, hint_h = 2 * N.BAR })
 component("channels", { build = build_channels, fit = fit_channels })
 component("status", { build = build_status, hint_h = status_card_h(), fit = fit_status })
+component("cooldowns", { build = build_cooldowns, hint_h = N.cd_card_h(), fit = fit_cooldowns })
 component("party", { build = build_party })
 component("guild", { build = build_guild, hint_h = guild_card_h(), fit = fit_guild })
 component("log", { build = build_log })
@@ -1911,12 +2648,26 @@ N.rateTimer = tempTimer(20, function() if next(N.st) then N.status(N.st) end end
 -- count the Strigoi cooldown bars and the barkskin bar down between messages
 if N.cdTimer then killTimer(N.cdTimer) ; N.cdTimer = nil end
 N.cdTimer = tempTimer(1, function()
-  if N.guildName == "Strigoi" and next(N.cd.on) then N.draw_cooldowns() end
+  if (N.guildName == "Strigoi" and (next(N.cd.on) or next(N.sbuffs.on))) or next(TM.on) then N.draw_cooldowns() end
   if N.guildName == "Druid" and next(N.buffs.on) then N.draw_bark() end
+  N.rot_tick()
 end, true)
+N.draw_cooldowns()
 N.relayout()
 N.register()
 if N.encOn then N.encoding(true) end
+if N.rotTrig then killTrigger(N.rotTrig) end
+N.rotTrig = tempRegexTrigger(ROT_REFUSED, function() N.rot_refusal(matches[2]) end)
+if N.rotSentId then killAnonymousEventHandler(N.rotSentId) end
+N.rotSentId = registerAnonymousEventHandler("sysDataSendRequest", function(...) N.rot_sent(...) end)
+if N.tomeTrig then killTrigger(N.tomeTrig) end
+N.tomeTrig = tempRegexTrigger(TOME_LINES, function() N.tome_line(matches[2]) end)
+if N.harvestTrig then killTrigger(N.harvestTrig) end
+N.harvestTrig = tempRegexTrigger(HARVEST_LINES, function() N.harvest_line(matches[2]) end)
+if N.tomeSentId then killAnonymousEventHandler(N.tomeSentId) end
+N.tomeSentId = registerAnonymousEventHandler("sysDataSendRequest", function(...) N.tome_sent(...) end)
+rot_bind()
+N.rot_foe(at("Char.Foe"))
 if N.alias then killAlias(N.alias) end
 N.alias = tempAlias("^nanny(?:\\s+(.+))?$", function() N.cmd(matches[2]) end)
 if type(gmcp) == "table" then N.hello() end

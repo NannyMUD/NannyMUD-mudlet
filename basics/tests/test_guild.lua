@@ -141,9 +141,12 @@ check(rec.gp[3] == "GP  121,920,430 / 129,815,337", "GP label cumulative " .. to
 -- *_cast_timestamp twins are not cooldowns
 local clock = 1000
 getEpoch = function() return clock end
+gmcp.Guild.Strigoi = { temp = {} }       -- the harvest from above wears off
+N.on_event(nil, "gmcp.Guild.Strigoi")
+N.sbuffs.learned.harvest = nil
 local cdRec = {}
-for i = 1, 3 do
-  N.gCdRows[i] = setmetatable({}, { __index = function(t, k)
+for i = 1, 8 do
+  N.cRows[i] = setmetatable({}, { __index = function(t, k)
     if k == "setValue" then return function(_, v, m, s) cdRec[i] = { v, m, s } end end
     if k == "front" or k == "back" or k == "text" then return any end
     return function() return t end
@@ -151,7 +154,7 @@ for i = 1, 3 do
 end
 gmcp.Guild.Strigoi = { active = { "wasp", "shift", "shift_cast_timestamp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.gCdShown == 1 and cdRec[1][3] == bar("🔄", "shift  0s, learning"), "one bar, shift, learning: " .. tostring(cdRec[1][3]))
+check(N.cdShown == 1 and cdRec[1][3] == bar("🔄", "shift  0s, learning"), "one bar, shift, learning: " .. tostring(cdRec[1][3]))
 clock = 1030
 gmcp.Guild.Strigoi = { active = { "wasp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
@@ -173,12 +176,12 @@ N.on_event(nil, "gmcp.Guild.Strigoi")
 clock = 3005
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.cd.learned.neutrino == nil and N.gCdShown == 1, "a cooldown already running at the start teaches nothing")
+check(N.cd.learned.neutrino == nil and N.cdShown == 1, "a cooldown already running at the start teaches nothing")
 -- the totem: no bar, and a length learned for it earlier is not shown either
 N.cd.learned.totem = { 2 }
 gmcp.Guild.Strigoi = { active = { "totem", "totem_cast_timestamp" } }
 N.on_event(nil, "gmcp.Guild.Strigoi")
-check(N.cd.on.totem == nil and N.gCdShown == 1, "totem: no bar, none tracked")
+check(N.cd.on.totem == nil and N.cdShown == 1, "totem: no bar, none tracked")
 N.cd.learned.totem = nil
 gmcp.Guild.Strigoi = { active = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
@@ -194,6 +197,65 @@ check(cdRec[1][3] == bar("<span style='color:#d8cfb8;'>∅\239\184\142</span>", 
   "dark set on a bar: the glyph in bone " .. tostring(cdRec[1][3]))
 N.iconSet = "emoji"
 gmcp.Guild.Strigoi = { active = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+
+-- harvest: a bar while any stat has a harvest bonus, its length learned from start to end
+local function harvest_row()
+  for i = 1, N.cdShown do
+    local r = cdRec[i]
+    if r and r[3]:find("harvest bonus", 1, true) then return r end
+  end
+end
+local before = N.cdShown
+clock = 4000
+gmcp.Guild.Strigoi = { temp = { str = 2 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+local hr = harvest_row()
+check(N.cdShown == before + 1 and hr and hr[3] == bar("🌾", "harvest bonus  0s, learning"), "harvest on: a bar, learning")
+clock = 4100
+gmcp.Guild.Strigoi = { temp = { str = 2, int = 1 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.sbuffs.on.harvest.t == 4100, "a new harvest while one is on starts it again")
+check(cdRec[1][3]:find("harvest bonus", 1, true) ~= nil and N.cdGroup[1] == 1 and N.cdGroup[2] == 2,
+  "buffs on top, the cooldowns after them")
+clock = 4400
+gmcp.Guild.Strigoi = { temp = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.sbuffs.learned.harvest[1] == 300 and N.cdShown == before, "worn off: 300 s learned, the bar goes")
+clock = 5000
+gmcp.Guild.Strigoi = { temp = { dex = 3 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+clock = 5100
+N.draw_cooldowns()
+hr = harvest_row()
+check(hr and hr[3] == bar("🌾", "harvest bonus  200s") and hr[1] == 200 and hr[2] == 300,
+  "learned: the time left, the bar emptying")
+gmcp.Guild.Strigoi = { temp = {} }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+
+-- the game's lines: a gain starts or restarts the bar, the fade ends it
+N.sbuffs.learned.harvest = nil
+clock = 7000
+N.harvest_line("fills you")
+gmcp.Guild.Strigoi = { stack = {} }               -- the data has not caught up yet
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.sbuffs.on.harvest and N.sbuffs.on.harvest.t == 7000, "a gain line starts it, before the data shows a bonus")
+clock = 7001
+gmcp.Guild.Strigoi = { temp = { int = 2 } }
+N.on_event(nil, "gmcp.Guild.Strigoi")
+clock = 7003
+N.harvest_line("fills you")
+check(N.sbuffs.on.harvest.t == 7000, "the same harvest's line moments later changes nothing")
+clock = 7200
+N.harvest_line("empowers you")
+check(N.sbuffs.on.harvest.t == 7200, "a second harvest restarts it, though the bonus did not rise")
+clock = 7500
+N.harvest_line("fades")
+check(N.sbuffs.on.harvest == nil and N.sbuffs.learned.harvest[1] == 300, "the fade ends it: 300 s learned")
+gmcp.Guild.Strigoi = { stack = { "claw" } }       -- the old bonus still in the data
+N.on_event(nil, "gmcp.Guild.Strigoi")
+check(N.sbuffs.on.harvest == nil, "a bonus the data has not taken away yet starts nothing")
+gmcp.Guild.Strigoi = { temp = {} }
 N.on_event(nil, "gmcp.Guild.Strigoi")
 
 -- a squeezed pane must not draw past its box: rows that do not fit are hidden
