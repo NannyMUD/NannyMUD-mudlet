@@ -781,9 +781,19 @@ is a setting, `mapcoins back turn|stay`, changed by hand when the maze changes.
 put, without dropping anything. A room is known by its first line and its exit list, but that
 key is only a check, never the identity: two rooms can look alike. Every room seen is kept as a
 step of the walk (map user data `elro.manual:<name>`), and the map is worked out from the whole
-walk each time. A seen room joins the first room with its key that it can be the same as, which
+walk each time. A seen room joins a room with its key that it can be the same as, which
 means that every way walked from both agrees as far as the walk followed it; merging two folds
-their ways together, so a disagreement many steps later still keeps them apart. When a later
+their ways together, so a disagreement many steps later still keeps them apart.
+The area is also taken to be a grid (2026-11-18, the user's call: "strict by default"): a
+compass, up/down or prefixed step is a fixed move, tracked by a union-find with offsets, so a
+walked path with a net move between two sightings proves them two rooms. Joining first-come
+merged a later sighting into the wrong look-alike in the six-dimensional cube maze, where
+neither had walked the way that told them apart; the grid catches it. Of the rooms a sighting can
+join, the one whose ways agree most is taken. A real warp then shows as one room mapped twice,
+which the player joins with `mapmanual same`, a join past the grid; the other policy, accepting
+a contradiction once it repeats, would make a repeated misread a permanent false edge. A room
+shown with no command of ours waiting (flee, summons) makes the mapper lost: the next step was
+taken from somewhere else. mapmanual is for any area without the game's map, not only mazes. When a later
 step disagrees, the map is worked out again and the look-alikes come apart: the original keeps
 its map room, the twin gets a new one. This rests on one assumption, that exits never change,
 so a way that led the same place three times (`SURE`) and then elsewhere is not kept: one step

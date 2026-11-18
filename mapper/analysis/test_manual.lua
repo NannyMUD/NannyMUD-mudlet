@@ -136,7 +136,7 @@ do
   step("look", A)
   step("east", B)
   step("east", A)
-  eq(rooms_of("twins"), 2, "the second grey room is first taken to be the first")
+  eq(rooms_of("twins"), 3, "the second grey room is two steps east of the first: proven another room")
   local first = M.data.twins.S.id[1]
   step("east", C)
   eq(rooms_of("twins"), 4, "east led elsewhere: two grey rooms")
@@ -156,6 +156,70 @@ do
   step("east", C)
   eq(M.view, M.data.twins.S.id[M.data.twins.S.find(4)], "east to the dark room tells which")
   eq(rooms_of("twins"), 4, "locating adds nothing")
+end
+
+-- the grid: a step is a fixed move, and look-alikes the walk places apart are two rooms. A warp
+-- (a loop that comes back to the start in one step east) makes a second copy; 'same' joins it.
+do
+  fresh()
+  elro.cmd_manual("on warp")
+  local P = room("A pale room.", "east.")
+  local Q = room("A quiet room.", "east.")
+  step("look", P)
+  step("east", Q)
+  step("east", P)                            -- the maze warps back to the pale room
+  step("east", Q)
+  eq(rooms_of("warp"), 4, "strict grid: every step east lands somewhere new")
+  local S = M.data.warp.S
+  local p1, p2 = S.id[S.find(1)], S.id[S.find(3)]
+  elro.cmd_manual("same " .. p1 .. " " .. p2)
+  eq(rooms_of("warp"), 2, "'same' joins the two pale rooms, and the quiet rooms after them follow")
+  S = M.data.warp.S
+  eq(getRoomExits(S.id[S.find(2)]).east, S.id[S.find(1)], "the quiet room's east warps back to the pale room")
+  -- kept with the walk, and worked out again the same
+  M.data = {}
+  local D = load and nil
+  elro.cmd_manual("off") ; elro.cmd_manual("on warp")
+  step("look", P)
+  eq(rooms_of("warp"), 2, "the pair is kept with the map")
+end
+
+-- 'same' refuses rooms whose ways differ: their own walks prove them two rooms
+do
+  fresh()
+  elro.cmd_manual("on apart")
+  local G = room("A green room.", "east and west.")
+  local R = room("A red room.", "east and west.")
+  local Y = room("A yellow room.", "east and west.")
+  step("look", G)
+  step("east", R)
+  step("east", G)
+  step("east", Y)
+  step("west", G) ; step("west", R) ; step("west", G)
+  step("west", Y)                            -- west of the first green room: yellow, not red
+  local S = M.data.apart.S
+  local g1, g2 = S.id[S.find(1)], S.id[S.find(3)]
+  local before = rooms_of("apart")
+  elro.cmd_manual("same " .. g1 .. " " .. g2)
+  eq(rooms_of("apart"), before, "their ways differ: 'same' is refused, nothing joined")
+  eq(#M.data.apart.same, 0, "...and the pair is not kept")
+end
+
+-- moved without a command of ours (a flee, a summons): no edge from where we were
+do
+  fresh()
+  elro.cmd_manual("on moved")
+  local H = room("A hall.", "north.")
+  local K = room("A kitchen.", "south.")
+  local W = room("A well.", "east.")
+  step("look", H)
+  for _, l in ipairs(W) do M.line(l) end     -- a room shown with nothing of ours waiting
+  M.prompt()
+  step("north", K)                           -- typed in the well, though we thought the hall
+  local S = M.data.moved.S
+  eq(getRoomExits(S.id[S.find(1)]).north ~= S.id[S.find(2)], true,
+     "the hall's north is not the kitchen: we were moved away from the hall")
+  eq(M.data.moved.nodes[2].s, true, "...the kitchen starts a walk of its own")
 end
 
 -- a way that led one place again and again and then another: that step is skipped, learning goes on
