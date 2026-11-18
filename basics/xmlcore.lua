@@ -9,9 +9,10 @@
 --
 -- Singleton in a neutral global: every package carries a copy and the NEWEST revision wins,
 -- whatever the load order. So the shared API may only grow: plan, listen, on_line, strip,
--- known, stack, cost. Raise REV with every change; a break needs a new global name.
+-- known, stack, cost, state, want, on_state, answer. Raise REV with every change; a break
+-- needs a new global name.
 
-local REV = 1
+local REV = 2
 NannyXml = NannyXml or {}
 local X = NannyXml
 if (X.REV or 0) > REV then return X end
@@ -27,6 +28,38 @@ X.cost = X.cost or { n = 0, sum = 0, max = 0 }
 
 function X.listen(key, fn) X.listeners[key] = fn end
 function X.on_line(key, fn) X.lines[key] = fn end
+
+-- ---- the game's own switch ----
+-- 'toggle xml on' sets the mode. Off is 'toggle ansi on': it leaves xml mode for the game's
+-- colours, where 'toggle xml off' would leave plain text with none. The answers ("xml mode
+-- turned on.", "Ansi mode turned on.") and a proven tag tell where it stands.
+-- X.state: true, false, or nil while not known.
+X.states = X.states or {}                   -- key -> fn(on) when the mode is seen to change
+function X.on_state(key, fn) X.states[key] = fn end
+
+local function set_state(on)
+  local was = X.state
+  X.state = on
+  if was ~= on then for _, fn in pairs(X.states) do pcall(fn, on) end end
+end
+
+-- ask for the mode on or off, off to the game's colours unless `plain`; true when sent
+function X.want(on, plain)
+  if X.state == on then return false end
+  if type(send) == "function" then
+    send(on and "toggle xml on" or plain and "toggle xml off" or "toggle ansi on", false)
+  end
+  return true
+end
+
+-- the game's answers that tell the mode
+function X.answer(s)
+  local w = s:match("^xml mode turned (%a+)")
+  if w then set_state(w == "on") return true end
+  w = s:match("^Ansi mode turned (%a+)")
+  if w then if w == "on" then set_state(false) end return true end
+  return false
+end
 
 -- The tags to cut from line `s` as { start, length }, start counted from 0 as selectSection
 -- wants; whether nothing but blanks is left; the spans of each class as { start, length,
@@ -106,6 +139,7 @@ function X.strip()
   local carried = {}
   for _, c in ipairs(X.stack) do carried[c] = true end
   local cut, empty, spans, text, wholes = X.plan(s)
+  if #cut > 0 and X.state ~= true then set_state(true) end
   for _, sp in ipairs(spans) do
     local piece = text:sub(sp[1] + 1, sp[1] + sp[2])
     for _, fn in pairs(X.listeners) do pcall(fn, sp[3], piece) end
@@ -131,5 +165,8 @@ if type(tempRegexTrigger) == "function" then
   if X.tagT then pcall(killTrigger, X.tagT) end
   -- every line: one inside a class opened earlier has no tag of its own
   X.tagT = tempRegexTrigger("^", function() NannyXml.strip() end)
+  if X.answerT then pcall(killTrigger, X.answerT) end
+  X.answerT = tempRegexTrigger("^(xml|Ansi) mode turned ",
+    function() NannyXml.answer(line or "") end)
 end
 return X

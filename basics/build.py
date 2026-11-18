@@ -50,12 +50,15 @@ xmlcore = vendored('xmlcore.lua')
 
 body = open(os.path.join(here, 'nannybasics.lua'), encoding='utf-8').read()
 colours = open(os.path.join(here, 'xmlcolours.lua'), encoding='utf-8').read()
+changes = open(os.path.join(here, 'changes.lua'), encoding='utf-8').read()
 lua = '-- vendored border coordinator (see border.lua); shared byte-for-byte with the mapper.\n' \
       '(function()\n' + border + '\nend)()\n\n' \
       '-- vendored xml tag reader (see xmlcore.lua); shared byte-for-byte with the mapper.\n' \
       '(function()\n' + xmlcore + '\nend)()\n\n' + body + \
       '\n\n-- the game\'s colours in xml mode (see xmlcolours.lua)\n' \
-      '(function()\n' + colours + '\nend)()\n'
+      '(function()\n' + colours + '\nend)()\n' \
+      '\n-- what changed, release by release (see changes.lua)\n' \
+      '(function()\n' + changes + '\nend)()\n'
 
 xml = '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE MudletPackage>

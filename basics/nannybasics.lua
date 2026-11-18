@@ -2726,6 +2726,10 @@ HELP.sections = {
   { title = "Guilds", rows = {
     { "nanny rot [set|use|del|off|key|auto|go|bind|open|trace]", "a Strigoi power rotation",
       "For the Strigoi: repeating a power costs you, so you mix several. Bare, your lists, the mode and the commands. 'set <name> <power>, <power>, ...' saves a list, written exactly as you would type the powers, and picks it; 'use <name>' picks one, 'del <name>' deletes one. 'off', 'key' and 'auto' set the mode: stopped, one power each time you press, or on its own. 'go' sends the next power in key mode, and 'bind <key>' puts that on a key such as F5 ('bind off' removes it). 'open <power>' starts each new fight with that power ('open off' stops). 'trace' prints every send, landing and refusal, or stops. It needs the foe gauge and the guild pane, and nothing goes out without a foe." },
+    { "nanny news [all|version]", "what changed in each release",
+      "Bare, what is not released yet and what the latest release brought, each with the help that tells more. 'all' lists every release, a version number one of them." },
+    { "nanny xml [on|off [ansi|plain]|hits on|off|defaults on|off]", "the game's xml mode, in your own colours",
+      "'on' and 'off' switch the game's xml mode; off goes back to the game's colours, or with 'off plain' to plain text without any, which is remembered ('off ansi' undoes it). The mode marks what each piece of text is; the client cuts the marks and colours the text in your own colours, read from the game's 'colour list' each time the mode comes on. An empty list means you set none and saw the text uncoloured, so nothing is painted; 'defaults on' uses a built-in scheme instead. 'hits on' colours each hit by its damage tier, with the tier in front; off by default, since it paints over your own attack colour. Bare, where it all stands. 'nanny help xml' explains more." },
     { "nanny tome [probe|hide|show|relearn|forget] [spell]", "what the Cooldowns card has learned",
       "Bare, the spell you have stored and what the Cooldowns card has learned about each spell's cooldown. 'probe <spell>' learns a cooldown for you: after each release the spell is chanted every few seconds until a chant works, never while a spell is stored, and the game's refusals are hidden; it stops by itself once the cooldown is known, 'probe off' stops it at once. 'hide <spell>' hides a bar and keeps what was learned, 'show <spell>' brings it back. 'relearn' (or 'relearn <spell>') after something shortened your cooldowns: the bar says maybe from the release, and a few early tries find the new length. 'forget <spell>' wipes what was learned about a spell." },
     { "nanny icons [dark|emoji]", "the cooldown icons",
@@ -2753,9 +2757,9 @@ HELP.pages = {
     "Sizes, places and closed panes are remembered across restarts.",
   } },
   xml = { title = "The game's xml mode", paras = {
-    "What it is|'toggle xml' in the game marks what each piece of text is (a monster, an exit, a tell) instead of colouring it. The client cuts the marks out and colours the text itself, and the mapper uses them to note monsters per room.",
-    "Your colours|Type 'colour list' once, in the game's normal colour mode or in xml mode: the client reads your colours as they pass and keeps them. Until then it uses a default scheme.",
-    "Hits|A hit is coloured by its damage tier, from the sound the game sends after it, with the tier in front ('7: You hit ...'). Turn off a script of your own that does the same.",
+    "What it is|xml mode marks what each piece of text is (a monster, an exit, a tell) instead of colouring it. The client cuts the marks out and colours the text itself, and the mapper uses them to note monsters per room. 'nanny xml on' turns it on, and so does 'mapmobs on'.",
+    "Your colours|Each time the mode comes on the client asks the game for your 'colour list', out of sight, and paints in those colours. If you set none, nothing is painted, as you saw it before; 'nanny xml defaults on' uses a built-in scheme. Change a colour in the game ('colour say yellow') and 'nanny xml off', 'nanny xml on' picks it up.",
+    "Hits|'nanny xml hits on' colours a hit by its damage tier, from the sound the game sends after it, with the tier in front ('7: You hit ...'). Off by default: it paints over your own attack colour. Turn off a script of your own that does the same.",
   } },
   game = { title = "In the game", code = true, paras = {
     "The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.",
@@ -2814,6 +2818,38 @@ local function wrap(text, width)
   end
   if cur ~= "" then lines[#lines + 1] = cur end
   return lines
+end
+
+-- 'nanny news [all|<version>]': bare, what is not released yet and the latest release
+function N.news(arg)
+  local all = N.CHANGES or {}
+  arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+  local list = {}
+  for _, c in ipairs(all) do
+    if arg == "all" then list[#list + 1] = c
+    elseif arg == "" then
+      list[#list + 1] = c
+      if c.version ~= "next" then break end
+    elseif c.version == arg then list[1] = c end
+  end
+  if #list == 0 then
+    local vs = {}
+    for _, c in ipairs(all) do vs[#vs + 1] = c.version end
+    say("no such version; there are " .. table.concat(vs, ", ") .. ".")
+    return
+  end
+  local ok, width = pcall(getWindowWrap, "main")
+  if not ok or type(width) ~= "number" or width < 40 then width = 80 end
+  cecho("\n<cyan>NannyBasics " .. N.VERSION .. "<reset>: what is new\n")
+  for _, c in ipairs(list) do
+    cecho("\n<cyan>" .. (c.version == "next" and "Not released yet" or (c.version .. "  " .. (c.date or ""))) .. "<reset>\n")
+    for _, it in ipairs(c.items) do
+      local text = it[1] .. (it[2] and ("  (" .. it[2] .. ")") or "")
+      -- echo: an item's '<area>' is text, where cecho would take it for a colour
+      for i, l in ipairs(wrap(text, width - 4)) do echo((i == 1 and "  - " or "    ") .. l .. "\n") end
+    end
+  end
+  cecho("<grey>  'nanny news all' for every release, 'nanny news 0.9.0' for one.<reset>\n")
 end
 
 function N.help(arg)
@@ -2907,6 +2943,10 @@ function N.cmd(arg)
     say("layout: " .. table.concat(parts, ", ") .. (N.logOn and "  (log shown)" or "  (log hidden)"))
   elseif verb == "update" then
     N.update(false, rest)
+  elseif verb == "news" then
+    N.news(rest)
+  elseif verb == "xml" then
+    if N.colours and N.colours.cmd then N.colours.cmd(rest) else say("xml colours are not loaded.") end
   elseif verb == "rot" then
     N.rot_cmd(rest)
   elseif verb == "tome" then

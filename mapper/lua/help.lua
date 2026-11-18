@@ -8,6 +8,8 @@ H.sections = {
   { title = "Getting started", rows = {
     { "maphelp [command or word]", "this list; a command's full text, or every help entry with that word",
       "Bare, the everyday commands. 'maphelp advanced' lists the rest: shaping the map by hand, mazes, diagnostics and tuning. 'maphelp <command>' gives that command's full text; any other word lists every command and page that mentions it. The pages: 'maphelp setup' (the settings we recommend), 'maphelp mouse' (what clicking does), 'maphelp auto' (what happens by itself), 'maphelp 3d' (Mudlet's 3D map) and 'maphelp share' (moving your map)." },
+    { "maphelp news [all|version]", "what changed in each release",
+      "Bare, what is not released yet and what the latest release brought, each with the help that tells more. 'all' lists every release, a version number one of them." },
     { "maplegend", "what the colours, dots, letters and lines mean",
       "What the colours, dots, letters and lines on the map mean, and how to read a room." },
     { "mapwin [dock [width]|embed|left|right|lock|unlock|reset]", "open, close or move the map window",
@@ -38,8 +40,8 @@ H.sections = {
       "Add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); a room holds as many as you like. Bare, list its notes. 'mapnote del <n>' and 'mapnote clear' remove them; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner. Notes are kept in the map." },
     { "mapnotes [in <area>|.] [mobs [all]|notes] [text]", "every room with notes or monsters seen",
       "Every room with notes or monsters seen, area by area, or only those whose lines contain the text ('mapnotes rabbit'). 'in <area>' looks in one map area only ('mapnotes in forest rabbit'), 'in .' in the area you are in; part of the area's name will do. 'mobs' lists only monsters seen, 'notes' only your own notes ('mapnotes mobs orc'). A monster shows how many of the room's visits it was there for (9/10); a seldom one is 'rare' when no other room of the area has it, and a wanderer when one does, listed only with 'mobs all'." },
-    { "mapmobs [on|off|clear [#id]|ignore [name]|unignore <name>]", "note the monsters seen in each room",
-      "In the game's xml mode ('toggle xml') the monsters a room shows are noted in it, with how often they were seen; 'mapnotes mobs <name>' finds them and clicking a room lists them. On unless you turn it off. 'clear' forgets the monsters of the room you are in, or of room #id. 'ignore <name>' never notes a pet or follower, which is in every room you are, and takes it out where it was noted; bare 'ignore' lists them. Bare, how many are noted and what noting costs." },
+    { "mapmobs [on [anyway]|off|clear [#id]|ignore [name]|unignore <name>]", "note the monsters seen in each room",
+      "In the game's xml mode ('toggle xml') the monsters a room shows are noted in it, with how often they were seen; 'mapnotes mobs <name>' finds them and clicking a room lists them. On unless you turn it off. 'mapmobs on' also turns the game's xml mode on when NannyBasics is installed to keep the game's colours; without it, 'mapmobs on anyway' does, and the text loses its colours. 'clear' forgets the monsters of the room you are in, or of room #id. 'ignore <name>' never notes a pet or follower, which is in every room you are, and takes it out where it was noted; bare 'ignore' lists them. Bare, how many are noted and what noting costs." },
   } },
   { title = "Pictures and other maps", rows = {
     { "mapexport [area] [a4] [plain]", "write a map as a picture to print or share",
@@ -284,7 +286,49 @@ elro.HELP = H
 
 -- ---- in the client ----
 
+-- The releases 'maphelp news [all|<version>]' shows: bare, what is not released yet and the
+-- latest release; nil and the versions there are when a version is unknown.
+function H.news(arg)
+  local all = elro.CHANGES or {}
+  arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+  if arg == "all" then return all end
+  local out = {}
+  for _, c in ipairs(all) do
+    if arg == "" then
+      out[#out + 1] = c
+      if c.version ~= "next" then break end
+    elseif c.version == arg then
+      out[1] = c
+    end
+  end
+  if #out > 0 then return out end
+  local vs = {}
+  for _, c in ipairs(all) do vs[#vs + 1] = c.version end
+  return nil, vs
+end
+
+function elro.map_news(arg)
+  local width = elro.help_width()
+  local list, vs = H.news(arg)
+  if not list then
+    cecho("\n<yellow>[elro]: no such version; there are " .. table.concat(vs, ", ") .. ".\n<reset>")
+    return
+  end
+  cecho("\n<cyan>ElrohirMapper " .. tostring(elro.VERSION) .. "<reset>: what is new\n")
+  for _, c in ipairs(list) do
+    cecho("\n<cyan>" .. (c.version == "next" and "Not released yet" or (c.version .. "  " .. (c.date or ""))) .. "<reset>\n")
+    for _, it in ipairs(c.items) do
+      local text = it[1] .. (it[2] and ("  (" .. it[2] .. ")") or "")
+      -- echo: an item's '<area>' is text, where cecho would take it for a colour
+      for i, l in ipairs(elro.wrap_text(text, width - 4)) do echo((i == 1 and "  - " or "    ") .. l .. "\n") end
+    end
+  end
+  cecho("<grey>  'maphelp news all' for every release, 'maphelp news 0.9.0' for one.<reset>\n")
+end
+
 function elro.map_help(arg)
+  local news = (arg or ""):lower():match("^%s*news%s*(.*)$")
+  if news then return elro.map_news(news) end
   local width = elro.help_width()
   local col = width >= 90 and 30 or 22
   local function wrap(text, w) return elro.wrap_text(text, w) end

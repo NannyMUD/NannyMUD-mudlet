@@ -211,12 +211,27 @@ function elro.cmd_mobs(arg)
         or ("never noted: " .. table.concat(t, ", ") .. "."))
     return
   end
-  if arg == "on" or arg == "off" then
-    B.state = arg == "on"
-    pcall(setMapUserData, "elro.mobs", arg)
+  local anyway = arg == "on anyway"
+  if arg == "on" or arg == "off" or anyway then
+    B.state = arg ~= "off"
+    pcall(setMapUserData, "elro.mobs", B.state and "on" or "off")
     if type(saveMap) == "function" then pcall(saveMap) end
-    say(B.state and "monsters are noted per room again (in the game's xml mode)."
-        or "monsters are no longer noted. Those already noted stay; 'mapmobs clear' empties a room.")
+    if not B.state then
+      say("monsters are no longer noted. Those already noted stay; 'mapmobs clear' empties a room.")
+      return
+    end
+    say("monsters are noted per room.")
+    -- the game's xml mode is what tells a monster; without NannyBasics it takes the colours away
+    local X = NannyXml
+    if X and X.state ~= true then
+      local colours = type(NannyBasics) == "table" and NannyBasics.colours
+      if colours or anyway then
+        if X.want(true) then say("turning on the game's xml mode for this ('nanny xml off' or the game's 'toggle ansi on' undoes it).") end
+      else
+        say("this needs the game's xml mode, which shows the game's text without its colours unless"
+          .. " NannyBasics is installed to put them back. 'mapmobs on anyway' turns it on regardless.")
+      end
+    end
     return
   end
   local hid = arg:match("^clear%s+#?(%d+)$")

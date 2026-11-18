@@ -61,6 +61,12 @@ if command -v python >/dev/null 2>&1; then
   done
 fi
 
+# CHANGELOG.md is written from the change tables; in the monorepo it must match them
+if [ -f ../tools/changelog.lua ] && ! (cd .. && luajit tools/changelog.lua check) >/tmp/gate_changelog.out 2>&1; then
+  echo "gate: CHANGELOG.md is out of date (run luajit tools/changelog.lua at the repo root)" >&2
+  gfail=1
+fi
+
 for t in $TESTS; do
   if ! luajit "analysis/test_$t.lua" >/tmp/gate_$t.out 2>&1; then
     echo "gate: analysis/test_$t.lua FAILED" >&2

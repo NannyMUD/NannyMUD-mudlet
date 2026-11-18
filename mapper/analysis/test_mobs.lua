@@ -102,6 +102,20 @@ eq(any, false, "mapmobs ignore: out of every room")
 listing(3, { "Rex" })
 eq(B.list(3)[1][1] ~= "Rex" and #B.list(3) == 3, true, "...and never noted again")
 
+-- turning it on asks for the game's xml mode: the mapper alone only says so, 'anyway' asks
+local sent = {}
+send = function(s) sent[#sent + 1] = s end
+NannyXml.state, NannyBasics = nil, nil
+elro.cmd_mobs("on")
+eq(#sent, 0, "mapper alone: xml mode is not switched without asking")
+elro.cmd_mobs("on anyway")
+eq(sent[1], "toggle xml on", "'mapmobs on anyway' asks the game")
+NannyXml.answer("xml mode turned on.")
+NannyBasics = { colours = {} }
+elro.cmd_mobs("on")
+eq(#sent, 1, "already on: nothing more is sent")
+NannyBasics = nil
+
 elro.cmd_mobs("clear #1")
 eq(#B.list(1), 0, "mapmobs clear #id forgets a room's monsters")
 eq(elro.note_lines(1)[1], "orc chief hides here", "...and keeps its notes")

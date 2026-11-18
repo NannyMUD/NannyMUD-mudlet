@@ -59,16 +59,63 @@ push("A <monster>troll</monster> is here.") ; NannyXml.strip()
 eq(buf[1].t, "A troll is here.", "the tags are cut")
 eq(buf[1].c[3] ~= nil and buf[1].c[1] == nil, true, "the monster's name is painted, the rest not")
 
--- hits by tier: the sound after the hit paints it and puts the tier in front
-C.set = { attack = { "red" } }
+-- hits by tier: off by default, so the player's own attack colour stands
+C.set, C.opts = { attack = { "red" } }, {}
+push("<attack>You hit the troll.</attack>") ; NannyXml.strip()
+push('<sound class="combat/default/hit_7*"/>') ; NannyXml.strip()
+eq(buf[#buf].t, "You hit the troll.", "hits off by default: no tier")
+buf = {}
+cecho = function() end
+C.cmd("hits on")
+eq(C.opt("hits"), true, "nanny xml hits on")
+-- on: the sound after the hit paints it and puts the tier in front
 push("<attack>You hit the troll very hard.</attack>") ; NannyXml.strip()
 push('<sound class="combat/default/hit_7*" kind="sound"/>') ; NannyXml.strip()
-eq(#buf, 2, "the sound's own line goes")
-eq(buf[2].t, "7: You hit the troll very hard.", "the hit gets its tier in front")
-eq(buf[2].c[10], "255,99,71", "...and tier 7's colour")
+eq(#buf, 1, "the sound's own line goes")
+eq(buf[1].t, "7: You hit the troll very hard.", "the hit gets its tier in front")
+eq(buf[1].c[10], "255,99,71", "...and tier 7's colour")
 push("<attack>You miss.</attack>") ; NannyXml.strip()
 push('<sound class="combat/default/miss*"/>') ; NannyXml.strip()
-eq(buf[3].t, "You miss.", "a miss: no tier")
+eq(buf[2].t, "You miss.", "a miss: no tier")
+
+-- the game's switch: 'toggle xml on', and off by going back to the game's colours
+local sent = {}
+send = function(s) sent[#sent + 1] = s end
+tempTimer = function() end
+NannyXml.state = nil
+C.cmd("on")
+eq(sent[1], "toggle xml on", "nanny xml on: the game is asked")
+NannyXml.answer("xml mode turned on.")
+eq(NannyXml.state, true, "...and now it is on")
+eq(sent[2], "colour list", "xml coming on reads the player's colours")
+eq(C.quiet, true, "...quietly")
+C.learn_line("Class: 'tell' ('<tell>tell</tell>') boldcyan")
+C.quiet_end()
+eq(C.of("tell")[1] == "boldcyan" and C.of("attack") == nil, true, "a fresh list replaces the old one")
+C.ask_colours() ; C.quiet_end()
+eq(C.of("monster"), nil, "an empty list: the player sees no colours, so nothing is painted")
+C.cmd("defaults on")
+eq(C.of("monster")[1], "boldred", "'nanny xml defaults on': the defaults all the same")
+C.cmd("defaults off")
+eq(C.of("monster"), nil, "...and off again")
+eq(#sent, 3, "...no more toggles sent")
+C.cmd("on")
+eq(#sent, 3, "already on: nothing sent")
+C.cmd("off")
+eq(sent[4], "toggle ansi on", "nanny xml off: back to the game's colours, not to plain text")
+NannyXml.answer("Ansi mode turned on.")
+eq(NannyXml.state, false, "...and xml mode is known to be off")
+-- a player who wants plain text says so once
+NannyXml.state = true
+C.cmd("off plain")
+eq(sent[#sent], "toggle xml off", "nanny xml off plain: plain text, no colours")
+NannyXml.answer("xml mode turned off.")
+NannyXml.state = true
+C.cmd("off")
+eq(sent[#sent], "toggle xml off", "...and remembered for the next 'nanny xml off'")
+NannyXml.state = true
+C.cmd("off ansi")
+eq(sent[#sent], "toggle ansi on", "'off ansi' goes back to the game's colours")
 
 print(string.format("test_xmlcolours: %d check(s), %d failure(s)", checks, fail))
 os.exit(fail > 0 and 1 or 0)

@@ -8,6 +8,7 @@ NannyBasics = NannyBasics or {}
 NannyBasics.colours = NannyBasics.colours or {}
 local C = NannyBasics.colours
 local X = NannyXml
+C.opts = C.opts or {}
 
 -- Until any 'colour list' line is read, these, in the game's colour names.
 C.defaults = {
@@ -21,24 +22,44 @@ local function file()
   return type(getMudletHomeDir) == "function" and (getMudletHomeDir() .. "/nanny_colours.lua") or nil
 end
 
+-- the file holds the classes learned and, under "_opt", the player's switches
 function C.load()
   C.set = {}
   local f = file()
   if f and type(table.load) == "function" then
     if not pcall(table.load, f, C.set) then C.set = {} end
   end
+  C.opts = C.set._opt or {}
+  C.set._opt = nil
 end
 
 function C.save()
   local f = file()
-  if f and type(table.save) == "function" then pcall(table.save, f, C.set) end
+  if not f or type(table.save) ~= "function" then return end
+  local t = { _opt = C.opts }
+  for k, v in pairs(C.set or {}) do t[k] = v end
+  pcall(table.save, f, t)
 end
 
--- a class's { fg, bg }, or nil: the player's own once any are known, else the defaults
+-- a switch, as the player set it or else its default. Hits are off until asked for: their tier
+-- colours would paint over the player's own attack colours.
+C.OPT_DEFAULT = { hits = false, off = "ansi" }
+function C.opt(name)
+  if not C.set then C.load() end
+  local v = C.opts[name]
+  if v == nil then v = C.OPT_DEFAULT[name] end
+  return v
+end
+
+-- a class's { fg, bg }, or nil: the player's own once any are known. An empty 'colour list'
+-- means the player set none and saw the game's text uncoloured, so nothing is painted then,
+-- unless they asked for the defaults; before any list is read, the defaults.
 function C.of(class)
   if not C.set then C.load() end
   if next(C.set) then return C.set[class] end
-  return C.defaults[class]
+  local d = C.opts.defaults
+  if d == true or (d == nil and not C.opts.empty) then return C.defaults[class] end
+  return nil
 end
 
 -- The standard terminal colours, used when Mudlet's own ANSI palette cannot be read.
@@ -74,9 +95,84 @@ function C.learn_line(s)
   fg = fg or rest:match("^(%S+)$")
   if not fg then return false end
   if not C.set then C.load() end
+  -- a list asked for afresh replaces the old one: a class removed in the game goes here too
+  if C.fresh then C.set, C.fresh = {}, false end
+  C.opts.empty = nil
   C.set[class] = { fg, bg }
   C.save()
   return true
+end
+
+-- Ask the game for 'colour list' with its lines kept off the screen, up to the next prompt.
+-- A list with no classes means the player set none: the defaults then.
+function C.ask_colours()
+  if type(send) ~= "function" then return end
+  C.quiet, C.fresh = true, true
+  send("colour list", false)
+  if type(tempTimer) == "function" then tempTimer(5, function() C.quiet_end() end) end
+end
+
+function C.quiet_end()
+  if not C.quiet then return end
+  C.quiet = false
+  if C.fresh then C.set, C.fresh = {}, false ; C.opts.empty = true ; C.save() end
+end
+
+-- nanny xml [on|off|hits on|off]
+function C.cmd(arg)
+  arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
+  local function say(s) cecho("\n<cyan>[nanny]: " .. s .. "<reset>\n") end
+  local h = arg:match("^hits%s+(%a+)$")
+  local d = arg:match("^defaults%s+(%a+)$")
+  if d == "on" or d == "off" then
+    if not C.set then C.load() end
+    -- on: the defaults wherever the game has no colours of yours; off: back to the list's say
+    C.opts.defaults = d == "on" or nil
+    C.save()
+    say(d == "on" and "the default colours are used where you set none in the game."
+        or "colours as your 'colour list' says: none set, nothing painted.")
+  elseif h == "on" or h == "off" then
+    if not C.set then C.load() end
+    C.opts.hits = h == "on"
+    C.save()
+    say(h == "on" and "hits are coloured by their damage tier, with the tier in front."
+        or "hits keep their class colour, no tier.")
+  elseif arg == "on" or arg:match("^off") then
+    local on = arg == "on"
+    -- off goes back to the game's colours, or to plain text for a player who chose that once
+    local how = arg:match("^off%s+(%a+)$")
+    if how == "plain" or how == "ansi" then
+      if not C.set then C.load() end
+      C.opts.off = how
+      C.save()
+    elseif not on and arg ~= "off" then
+      say("'nanny xml off', 'nanny xml off ansi' (the game's colours) or 'nanny xml off plain' (no colours).")
+      return
+    end
+    local plain = not on and C.opt("off") == "plain"
+    if not X.want(on, plain) then
+      say("the game's xml mode is already " .. (on and "on" or "off") .. ".")
+    else
+      say(on and "asking the game to turn xml mode on."
+          or plain and "asking the game to leave xml mode for plain text, no colours."
+          or "asking the game to leave xml mode for its own colours.")
+    end
+  else
+    local n = 0
+    if not C.set then C.load() end
+    for _ in pairs(C.set) do n = n + 1 end
+    say(string.format("xml mode is %s. Colours: %s. Hits by damage tier: %s. 'nanny help xml' explains.",
+      X.state == true and "on" or X.state == false and "off" or "not known yet (on once tags are seen)",
+      n > 0 and (n .. " class(es) of yours, from 'colour list'")
+        or C.of("say") and "the defaults"
+        or "none (your 'colour list' is empty; 'nanny xml defaults on' for ours)",
+      C.opt("hits") and "on" or "off"))
+  end
+end
+
+-- xml mode seen to come on: read the player's colours, quietly
+if X and X.on_state then
+  X.on_state("colours", function(on) if on then C.ask_colours() end end)
 end
 
 local function paint(sp)
@@ -104,7 +200,7 @@ C.hit = C.hit or {}                         -- { { line, start, length } } of th
 
 function C.hit_sound(attr, here)
   local n = tonumber((attr or ""):match("hit_(%d+)"))
-  if not n or #C.hit == 0 or type(moveCursor) ~= "function" then return false end
+  if not n or not C.opt("hits") or #C.hit == 0 or type(moveCursor) ~= "function" then return false end
   -- a hit more than a few lines back is not this sound's
   if here and C.hit[#C.hit][1] < here - 5 then C.hit = {} return false end
   local name = C.HIT[n] or "blue"
@@ -141,5 +237,12 @@ end
 if X and X.on_line then X.on_line("colours", C.line) end
 if type(tempRegexTrigger) == "function" then
   if C.learnT then pcall(killTrigger, C.learnT) end
-  C.learnT = tempRegexTrigger("^Class: '", function() C.learn_line(line or "") end)
+  C.learnT = tempRegexTrigger("^Class: '", function()
+    C.learn_line(line or "")
+    if C.quiet then deleteLine() end
+  end)
+end
+if type(tempPromptTrigger) == "function" then
+  if C.promptT then pcall(killTrigger, C.promptT) end
+  C.promptT = tempPromptTrigger(function() C.quiet_end() end)
 end
