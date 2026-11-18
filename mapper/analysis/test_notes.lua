@@ -81,6 +81,36 @@ local out = table.concat(said)
 eq(out:find("(abby)", 1, true) ~= nil and out:find("(zed)", 1, true) ~= nil, true, "mapnotes names each room's area")
 eq(out:find("(abby)", 1, true) < out:find("(zed)", 1, true), true, "...sorted by area, not by id")
 
+-- in <area>: one map area only; part of its name will do; '.' the area you are in
+local far = addAreaName("forest")
+addRoom(4) ; setRoomArea(4, far) ; setRoomCoordinates(4, 0, 0, 0) ; setRoomName(4, "room 4")
+setRoomUserData(4, "note", "a cat in a tree")
+elro.cs_reset()
+echoed = {}
+elro.cmd_notes("cat")
+eq(#echoed, 2, "mapnotes cat: both areas")
+echoed = {}
+elro.cmd_notes("in for cat")
+eq(#echoed == 1 and echoed[1], "a cat in a tree\n", "mapnotes in <part of an area> cat: that area only")
+echoed = {}
+elro.cmd_notes("in town")
+eq(#echoed, 4, "mapnotes in town: every note there, no text")
+echoed = {}
+elro.current = 4
+elro.cmd_notes("in . cat")
+eq(#echoed == 1 and echoed[1], "a cat in a tree\n", "mapnotes in . cat: the area you are in")
+-- the overlay names where exits to other areas lead; exits within the area are not named
+setExit(1, 2, "east") ; setExit(1, 4, "north") ; setExit(1, 4, "up")
+local ainfo = infos["Area exits"]
+eq(ainfo ~= nil, true, "an Area exits line in the map's info overlay")
+eq((ainfo(1)), "To other areas: north, up \226\134\146 forest", "...naming the area and the ways there")
+eq((ainfo(2)), "", "...and nothing for a room with no way out of its area")
+elro.current = 1
+said = {}
+elro.cmd_notes("in nowhere cat")
+eq(table.concat(said):find("no area called 'nowhere'", 1, true) ~= nil, true, "an unknown area: said so")
+setRoomUserData(4, "note", "")
+
 echoed = {}
 elro.search_rooms("statue")
 eq(echoed[1], "statue of a cat\n", "mapsearch finds a room by its notes")

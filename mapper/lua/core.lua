@@ -743,9 +743,8 @@ local function pref_set(P, on)
 end
 
 function elro.mudlet_prefs_boot()
-  for _, P in pairs(MUDLET_PREFS) do
-    if not pref_chosen(P) then pref_set(P, false) end
-  end
+  -- the choice is applied both ways: Mudlet does not always keep its own setting between logins
+  for _, P in pairs(MUDLET_PREFS) do pref_set(P, pref_chosen(P) == "on") end
 end
 -- once the map is loaded, so a choice kept in it is seen
 if type(tempTimer) == "function" then tempTimer(2, function() elro.mudlet_prefs_boot() end) end
@@ -2078,6 +2077,8 @@ end
 function elro.view_room()
   local coin = elro.coins and elro.coins.view
   if coin and roomExists(coin) then return coin end
+  local man = elro.manual and elro.manual.view_room and elro.manual.view_room()
+  if man then return man end
   if elro.offmap then return elro.off_room() end
   return elro.current
 end
@@ -2991,13 +2992,42 @@ function elro.glyph_paint(id, ch)
   pcall(setRoomChar, id, ch or "")
   if ch and ch ~= "" and type(setRoomCharColor) == "function" then
     local col
-    if elro.terrainOn then
+    if elro.untried_nonstd(id) then col = elro.classColours and elro.classColours.untried end
+    if not col and elro.terrainOn then
       local _, dot = elro.terrain_roles(getRoomUserData(id, "terr"))
       if dot then col = dot.col end
     end
     col = col or (elro.classColours and elro.classColours.glyph) or { 255, 210, 90 }
     pcall(setRoomCharColor, id, col[1], col[2], col[3])
   end
+end
+
+-- up and down not yet walked: they lead to the unexplored placeholder
+function elro.untried_vert(id)
+  local out = {}
+  local ex = getRoomExits(id) or {}
+  for _, d in ipairs({ "up", "down" }) do
+    if ex[d] == elro.FRONTIER_ROOM then out[#out + 1] = d end
+  end
+  return out
+end
+
+-- Does the room have a way no walk from it has taken: up, down, or a named non-compass exit?
+-- Its glyph then takes the untried colour, as an unwalked compass way has its stub.
+function elro.untried_nonstd(id)
+  if #elro.untried_vert(id) > 0 then return true end
+  local named = elro.nonstd_exits(getRoomUserData(id, "xspec") or "")
+  if #named == 0 then return false end
+  local walked = {}
+  for v in pairs(elro.smap_index()[id] or {}) do walked[v] = true end
+  for _, e in ipairs(elro.special_list(id)) do
+    local v = elro.cmd_verb(e.cmd)
+    if v then walked[v] = true end
+  end
+  for _, d in ipairs(named) do
+    if not walked[elro.cmd_verb(d) or d] then return true end
+  end
+  return false
 end
 
 -- Does this room currently show a glyph? Read from Mudlet when it can answer (one
@@ -3363,7 +3393,16 @@ function elro.glyph_char(id, csv, names)
   -- has nothing to derive a letter from.
   if elro.is_maze_terr(csv) then return "?" end
   if elro.terrain_dot_only(csv) then return "" end
-  return elro.glyph_for(names or elro.room_nonstd(id))
+  names = names or elro.room_nonstd(id)
+  -- an unexplored up or down has no stub to show it, so it takes the glyph until walked
+  local vert = elro.untried_vert(id)
+  if #vert > 0 then
+    local all = {}
+    for _, v in ipairs(names) do all[#all + 1] = v end
+    for _, v in ipairs(vert) do all[#all + 1] = v end
+    names = all
+  end
+  return elro.glyph_for(names)
 end
 
 -- Terrain names the server used to send, mapped to what it sends now, so rooms
@@ -4202,6 +4241,8 @@ function elro.stub_apply(id, advertised)
   if changed then
     elro.cs_dirty(id)
     if edges and elro.draw_area_stubs then elro.draw_area_stubs({ [id] = true }) end
+    -- an unexplored up or down shows in the glyph
+    if want.up or want.down or front.up or front.down then elro.glyph_room(id) end
   end
 end
 
@@ -5163,7 +5204,10 @@ function elro.onRoom(id, fromId, dir, name, area, exits, terr, mha, mh, decl)
         local had = old == id and not isNew
         if not had then setExit(fromId, id, dir) ; touched[fromId] = true end
         -- the half-line on that slot would replace the drawn corridor: stub_apply drops it
-        if wasFrontier then elro.stub_apply(fromId) end
+        if wasFrontier then
+          elro.stub_apply(fromId)
+          if dir == "up" or dir == "down" then elro.glyph_room(fromId) end
+        end
         if assumedF then
           setRoomUserData(fromId, "assumed_" .. dir, "") -- forward is now OBSERVED
           touched[fromId] = true
@@ -5748,7 +5792,9 @@ function doSpeedWalk()
   if type(speedWalkDir) ~= "table" or #speedWalkDir == 0 then
     cecho("\n<yellow>[elro]: no path to that room.\n<reset>") return
   end
-  elro.walk_steps(speedWalkDir, speedWalkPath)
+  -- in a learned maze off the map, the walk starts from the room shown
+  local man = elro.manual and elro.manual.view_room and elro.manual.view_room()
+  elro.walk_steps(speedWalkDir, speedWalkPath, man)
 end
 
 -- The same from the right-click menu: walk to the one selected room.
@@ -6003,15 +6049,51 @@ function elro.cmd_note(arg)
   if rest and rest:match("%S") and type(expandAlias) == "function" then expandAlias(rest, false) end
 end
 
--- mapnotes [text]: every room with notes, or those whose notes contain the text (any case)
+-- mapnotes [in <area>|.] [mobs|notes] [text]: every room with notes or monsters seen, or those
+-- whose lines contain the text (any case); 'in <area>' only that map area, 'in .' the one you
+-- are in; 'mobs' only monsters seen, 'notes' only the player's own notes
 function elro.cmd_notes(pat)
   pat = (pat or ""):gsub("^%s+", ""):gsub("%s+$", "")
+  local aid, aname, want, only, all
+  while true do
+    local w = pat:match("^in%s+(%S+)")
+    if w and not want then want = w ; pat = pat:gsub("^in%s+%S+%s*", "")
+    elseif not only and (pat:match("^mobs%f[%s%z]") or pat:match("^notes%f[%s%z]")) then
+      only = pat:match("^(%a+)") ; pat = pat:gsub("^%a+%s*", "")
+    elseif only == "mobs" and not all and pat:match("^all%f[%s%z]") then
+      all = true ; pat = pat:gsub("^all%s*", "")
+    else break end
+  end
+  if want then
+    if want == "." then
+      aid = elro.current and roomExists(elro.current) and not elro.offmap and getRoomArea(elro.current)
+      if not aid then cecho("\n<red>[elro]: you are not on the map; name the area: mapnotes in <area>\n<reset>") return end
+      aname = elro.areaName(aid)
+    else
+      local many
+      aid, aname, many = elro.find_area(want)
+      if not aid then
+        cecho("\n<red>[elro]: " .. (many and ("several areas match '" .. want .. "': " .. table.concat(many, ", "))
+              or ("no area called '" .. want .. "'")) .. "\n<reset>") return
+      end
+    end
+  end
   local lpat = pat:lower()
   local rows = {}
-  for id in pairs(elro.cs_all_rooms()) do
+  local ids = {}
+  if aid then ids = elro.cs_area_rooms(aid)
+  else for id in pairs(elro.cs_all_rooms()) do ids[#ids + 1] = id end end
+  for _, id in ipairs(ids) do
     local hits = {}
-    for i, l in ipairs(note_lines(id)) do
-      if lpat == "" or l:lower():find(lpat, 1, true) then hits[#hits + 1] = { i, l } end
+    if only ~= "mobs" then
+      for i, l in ipairs(note_lines(id)) do
+        if lpat == "" or l:lower():find(lpat, 1, true) then hits[#hits + 1] = { i, l } end
+      end
+    end
+    if only ~= "notes" and elro.mob_rows then
+      for _, m in ipairs(elro.mob_rows(id, all)) do
+        if lpat == "" or m[1]:lower():find(lpat, 1, true) then hits[#hits + 1] = { false, m } end
+      end
     end
     if #hits > 0 then rows[#rows + 1] = { id, hits, getRoomUserData(id, "sarea") or "" } end
   end
@@ -6020,17 +6102,25 @@ function elro.cmd_notes(pat)
     if a[3] ~= b[3] then return a[3] < b[3] end
     return a[1] < b[1]
   end)
+  local inArea = aname and (" in " .. aname) or ""
+  local what = only == "mobs" and "monsters seen" or only == "notes" and "notes" or "notes or monsters seen"
   if #rows == 0 then
-    cecho(pat == "" and "\n<yellow>[elro]: no notes yet. 'mapnote <text>' adds one to the room you are in.\n<reset>"
-          or "\n<yellow>[elro]: no notes containing '" .. pat .. "'.\n<reset>")
+    cecho(pat == "" and ("\n<yellow>[elro]: no " .. what .. inArea .. " yet. 'mapnote <text>' adds a note to the room you are in.\n<reset>")
+          or "\n<yellow>[elro]: no " .. what .. inArea .. " containing '" .. pat .. "'.\n<reset>")
     return
   end
-  cecho(string.format("\n<cyan>[elro] %d room(s) with notes%s:<reset>\n", #rows,
+  cecho(string.format("\n<cyan>[elro] %d room(s) with %s%s%s:<reset>\n", #rows, what, inArea,
         pat == "" and "" or (" containing '" .. pat .. "'")))
   for _, r in ipairs(rows) do
     cecho(string.format("<yellow>%d<reset>  %s", r[1], getRoomName(r[1]) or "?"))
     cecho(r[3] ~= "" and ("  <grey>(" .. r[3] .. ")<reset>\n") or "\n")
-    for _, h in ipairs(r[2]) do note_echo(h[1], h[2]) end
+    for _, h in ipairs(r[2]) do
+      if h[1] then note_echo(h[1], h[2])
+      else
+        -- a monster's name is game text: echo, so '<' in it is never a colour
+        cecho("<red>  seen<reset>  ") ; echo(elro.mobs.describe(h[2]) .. "\n")
+      end
+    end
   end
   cecho("<grey>  'mapgoto <id>' walks there.<reset>\n")
 end
@@ -6070,6 +6160,40 @@ if type(registerMapInfo) == "function" then
     return s, false, false, 230, 210, 140
   end)
   if type(enableMapInfo) == "function" then pcall(enableMapInfo, NOTE_INFO) end
+end
+
+-- Where the clicked room's exits to other areas lead: the blue arrows carry no name, and map
+-- labels stay in the map file for good, so the overlay names them instead.
+function elro.area_exits_text(room)
+  if not room or not roomExists(room) then return "" end
+  local here = getRoomArea(room)
+  local byArea, order = {}, {}
+  local function add(dir, to)
+    if to == elro.FRONTIER_ROOM or not roomExists(to) then return end
+    local a = getRoomArea(to)
+    if a == here then return end
+    local name = to == elro.OFF_ROOM and "off the map" or (elro.areaName(a) or "?")
+    if not byArea[name] then byArea[name] = {} ; order[#order + 1] = name end
+    table.insert(byArea[name], dir)
+  end
+  for dir, to in pairs(getRoomExits(room) or {}) do add(dir, to) end
+  for _, s in ipairs(elro.special_list(room)) do add(s.cmd, s.to) end
+  if #order == 0 then return "" end
+  table.sort(order)
+  local parts = {}
+  for _, name in ipairs(order) do
+    table.sort(byArea[name])
+    parts[#parts + 1] = table.concat(byArea[name], ", ") .. " \226\134\146 " .. name   -- an arrow
+  end
+  return "To other areas: " .. table.concat(parts, " \194\183 ")
+end
+
+local AREA_INFO = "Area exits"
+if type(registerMapInfo) == "function" then
+  pcall(registerMapInfo, AREA_INFO, function(room)
+    return elro.area_exits_text(room), false, false, 140, 170, 255
+  end)
+  if type(enableMapInfo) == "function" then pcall(enableMapInfo, AREA_INFO) end
 end
 
 -- list outgoing and incoming edges for a room (default: current room)

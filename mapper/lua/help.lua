@@ -36,8 +36,10 @@ H.sections = {
   { title = "Notes", rows = {
     { "mapnote [text]", "write a note on the room you are in",
       "Add a line of your own to the room you are in ('mapnote orc guard, 2 swords'); a room holds as many as you like. Bare, list its notes. 'mapnote del <n>' and 'mapnote clear' remove them; '#<id>' first means another room. Right-click a room on the map for 'Add note' and 'Notes'; clicking a room shows its notes in the map's corner. Notes are kept in the map." },
-    { "mapnotes [text]", "every room with notes, by area",
-      "Every room with notes, area by area, or only those whose notes contain the text ('mapnotes rabbit')." },
+    { "mapnotes [in <area>|.] [mobs [all]|notes] [text]", "every room with notes or monsters seen",
+      "Every room with notes or monsters seen, area by area, or only those whose lines contain the text ('mapnotes rabbit'). 'in <area>' looks in one map area only ('mapnotes in forest rabbit'), 'in .' in the area you are in; part of the area's name will do. 'mobs' lists only monsters seen, 'notes' only your own notes ('mapnotes mobs orc'). A monster shows how many of the room's visits it was there for (9/10); a seldom one is 'rare' when no other room of the area has it, and a wanderer when one does, listed only with 'mobs all'." },
+    { "mapmobs [on|off|clear [#id]|ignore [name]|unignore <name>]", "note the monsters seen in each room",
+      "In the game's xml mode ('toggle xml') the monsters a room shows are noted in it, with how often they were seen; 'mapnotes mobs <name>' finds them and clicking a room lists them. On unless you turn it off. 'clear' forgets the monsters of the room you are in, or of room #id. 'ignore <name>' never notes a pet or follower, which is in every room you are, and takes it out where it was noted; bare 'ignore' lists them. Bare, how many are noted and what noting costs." },
   } },
   { title = "Pictures and other maps", rows = {
     { "mapexport [area] [a4] [plain]", "write a map as a picture to print or share",
@@ -50,6 +52,8 @@ H.sections = {
   { title = "Mazes", rows = {
     { "mapcoins [on|off|reset|relearn|twoway|back|go [n]|layout]", "(experimental) tell a maze's identical rooms apart by dropped coins",
       "Experimental: tried on a few mazes only, and it may change. For a maze whose rooms all look alike. Switch it on inside the maze ('on <room name>' if it cannot read the name): after each move into a room with no gold it drops a number of coins no other room has, so every room is known by its coins, and draws the rooms on a map of their own as you walk. Lines leave each room in the direction you walked, coloured by direction, with an arrow where they led; a short line marks a way not yet tried. Bare, the rooms numbered so far: where each way leads, which come back to the same room, which did not move you, which showed something else, and which are untested. 'go' walks to the nearest room with an untested way, 'go <n>' to room n, a step at a time; typing anything stops it. 'twoway' takes every way walked to lead back the way you came, for a maze that keeps to that. 'layout' has the mapper's engine tidy the coin map once. 'relearn' forgets every way but keeps the room numbers, since the coins are still lying there. 'reset' wipes it all and starts again at 1; 'off' stops dropping. In a cave of forward, right, back and left it keeps track of your facing and reads what each room says lies around you; 'back stay' is for a cave where back steps away without turning you, 'back turn' changes it again. Kept for this session only." },
+    { "mapmanual [on <name>|off|twoway|forget <room>|dump|wipe <name> [confirm]]", "(experimental) map an unmapped maze by what its rooms show",
+      "Experimental. For a maze with no map from the game whose rooms stay put. 'on <name>' learns it into an area of that name: each room is known by its first line and its exit list, and every step you walk is kept. Rooms that look alike are told apart by where their exits lead, and the map is worked out again whenever the walk shows two of them differ. Compass ways, up and down are exits; any other way the room names, such as 'meta-north', is a special exit, so a double-click walks there. 'off' stops learning, but a known maze still shows where you are, or how many look-alike rooms you could be in. A step against a way that led the same place several times is not kept; learning stays on, also after a restart. Bare, the mazes known and their untried exits. 'twoway on' takes a way walked to lead back where the room lists the way back (east and west, meta-north and meta-south) and it has not been walked; a walk overrides it. 'forget <room>' drops every sighting of one room, for a room that was split wrongly; the rooms split off with it fold back. 'dump' writes the walk to a file in the profile folder, for a bug report. 'wipe <name> confirm' deletes one. Kept with the map." },
   } },
   { title = "Fixing the map", rows = {
     { "mapwipe [area] [confirm]", "delete the whole map, or one area",
@@ -76,7 +80,7 @@ H.sections = {
     { "mapterrain [on|off]", "colour rooms by terrain",
       "Colour rooms by terrain; 'maplegend' says which colour is what." },
     { "mapglyphs [on|off]", "a letter on rooms with a typed exit",
-      "A letter on rooms with an exit you type instead of a direction." },
+      "A letter on rooms with an exit you type instead of a direction, the first letter of its name, or '*' for several kinds. While one of them has never been walked from that room the letter is light blue; an up or down not yet walked shows the same way, as 'U' or 'D', since no stub can show it." },
     { "mapstubs [on|off|edges|classic|halo N]", "how unexplored exits are drawn",
       "What the map draws for unexplored exits. Mudlet redraws every stub of its own every frame, so a big part-explored area is slow. 'edges' draws each unexplored exit as a short line instead, which is far cheaper; 'classic' is Mudlet's stubs with a halo, showing only the stubs within N cells of you once an area has a lot. Nothing is lost either way." },
     { "mapvert [on|stack|off]", "how floors joined by up and down are placed",
@@ -85,6 +89,8 @@ H.sections = {
       "Mudlet's 3D map (5.1) can draw the areas next to the one you are in around its edges. Off unless you turn it on: this mapper lays each area out on its own, so neighbours drawn together can overlap. Bare, says which it is. Kept in the map, so your choice holds." },
     { "maplevels [on|off]", "show the levels above and below as rings in 2D",
       "Mudlet can draw the rooms one level up and one level down as rings on the 2D map. Off unless you turn it on: with stacked floors the rings cover the level you are on. On, make them faint in Preferences: open the colour for the upper or lower level and set its alpha channel to about 50. Bare, says which it is. Kept in the map, so your choice holds." },
+    { "mapflags [on|off]", "name the area each blue arrow leads to",
+      "A small flag at the tip of each blue arrow out of an area, naming the area it leads to. Off unless you turn it on. Mudlet draws map text blurred, as it does room letters. Clicking a room names them too, flags or not. Bare, says which it is. Kept in the map, so your choice holds." },
     { "mapareamin <n>", "how small an area folds into the world map",
       "The smallest cluster of rooms that keeps an area of its own instead of folding into the world map. Remembered." },
   } },
@@ -183,7 +189,7 @@ H.advanced = {
 H.pages = {
   mouse = { title = "On the map, with the mouse", paras = {
     "Double-click a room|Walks there by the shortest way, using recorded exits where they are needed.",
-    "Click a room|Shows its notes in the map's corner.",
+    "Click a room|Shows its notes in the map's corner, and which areas its exits to other areas lead to: a blue arrow leaves the area.",
     "Right-click a room|Besides Mudlet's own entries: 'Walk here', 'Add note', 'Notes' and 'Delete rooms' (every selected room, cleanly; see 'mapdelroom'). Mudlet's 'Lock' keeps speedwalks out, the same as 'mapavoid'.",
     "The docked panel|Drag the bar at its inner edge to make it wider or narrower; the size is remembered. The X on the map's strip closes it; right-click any strip or bar to show it again, hide or show panes, or reset the layout. With NannyBasics, drag a pane by its title strip to move it, and the bars between panes to resize them.",
     "In mapview|Click a room to walk there; the wheel zooms.",

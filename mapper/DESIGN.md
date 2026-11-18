@@ -697,6 +697,22 @@ puts it: the map's info overlay names the selected room's notes. Adding one from
 goes through the command line (`mapnote #id `), the only text input Lua has. Unlike the
 walk commands, a lone `;` stays in a note: "orc; sword" is ordinary note text, and dropping
 it as a script's split line would lose what the player wrote.
+`mapnotes in <area>` (2026-11-18, a player's request) narrows the list to one map area, found
+by part of its name as `mapgoto` finds one.
+
+The same overlay names where a room's exits to other areas lead (2026-11-18, a player asked
+for flags on the blue arrows). Map labels would show it without a click, but they are written
+into the map file and cannot be told apart from the player's own later, which is why the
+cross-area name labels were taken out before; a hover tooltip does not exist for the map.
+`mapflags on` brings the labels back as an option (flags.lua): every flag's text starts with
+an invisible marker (zero-width space and non-joiner), so a sweep at startup and on the switch
+finds every one of ours, including those a crash left in the map file, and never a label the
+player made. The earlier attempt piled labels up because nothing could tell them apart.
+Mudlet's label size does not follow font and zoom alike in every profile, so each flag is read
+back (`getMapLabel`) and the zoom corrected toward one height. Unscaled labels were tried and
+dropped: no sharper, and they leave their arrows as the map zooms. Mudlet draws all map text
+as a stretched picture, room letters included, so the flags stay optional and the click line
+stays beside them.
 
 `mapimport` (2026-10-30) joins another profile's map into this one. Mudlet can only replace
 a map, so the other map file is loaded for a moment, read into a table, and this map loaded
@@ -760,6 +776,69 @@ so a maze worded differently is a new entry rather than new code. Mazes also dif
 `back` does: in some it turns you round, in others it steps away and keeps the facing, and
 one maze switches between the two halfway through. That cannot be read from the text, so it
 is a setting, `mapcoins back turn|stay`, changed by hand when the maze changes.
+
+`mapmanual` (manual.lua, 2026-11-13) maps a maze that sends no `!NMP` and whose rooms stay
+put, without dropping anything. A room is known by its first line and its exit list, but that
+key is only a check, never the identity: two rooms can look alike. Every room seen is kept as a
+step of the walk (map user data `elro.manual:<name>`), and the map is worked out from the whole
+walk each time. A seen room joins the first room with its key that it can be the same as, which
+means that every way walked from both agrees as far as the walk followed it; merging two folds
+their ways together, so a disagreement many steps later still keeps them apart. When a later
+step disagrees, the map is worked out again and the look-alikes come apart: the original keeps
+its map room, the twin gets a new one. This rests on one assumption, that exits never change,
+so a way that led the same place three times (`SURE`) and then elsewhere is not kept: one step
+is far more likely a misread line than a changed maze. It used to stop learning, and since
+learning is easy to lose without noticing, the user kept walking unlearned rooms. The maze
+being learned is kept in the map (`elro.manual.learn`), so a restart or update does not end it. Rooms that no walk could ever tell apart stay one room: every route from
+them reads the same, so one room serves speedwalks as well as two. With learning off, a known
+maze is still located: the candidates are every room with the key seen, narrowed by each step's
+known way, and the view moves only when one is left. Compass ways and up/down are exits; any
+other way the room names is a special exit in `elro.smap`, so Mudlet's own pathing walks it.
+
+Pairing a room with the command that reached it is the fragile part, and the first version got it
+wrong live: it matched each command to the output up to the next prompt, but a follower's
+"Rex arrives." brings a prompt of its own, and with commands typed ahead every later room was
+paired one command late. Wrong steps are worse than missing ones: they look like twins and split
+real rooms. So a room now answers the oldest waiting move at its exit line and a wall line
+answers it too; prompts only end a block. A move that got no answer is dropped when the next was
+typed well after it (`GAP_MS`), a step through an exit the room does not list counts as no way,
+and a wall on a listed exit counts as no wall, which also heals steps saved before the fix.
+A room's name is its first line, so lines are read only while a move or look of ours waits for an
+answer, starting when it was sent: chatter between commands ("Bob grins") and the status
+line were read as names, and every misread name is a false twin. `WORDS.noise` holds the lines
+that can still land first (sound codes, the `**` status line). The game's xml mode (`toggle xml`)
+tags the name `<short>`: tags are stripped so a line reads as in plain mode and the keys match,
+and while rooms arrive tagged only a `<short>` line can be a name. `xml.lua` cuts the tags out of
+the screen too, but only a tag whose pair is proven (its close on the line, or a close matching
+an open of an earlier line), since game text can hold a word in angle brackets of its own. Lines
+already shown are never edited: an unknown tag that opens without closing stays visible once,
+and its name is known, and cut at once, from its first close on. The tags seen in the game's own
+output are known from the start.
+
+xml mode was unattractive because it drops the ANSI colours, but in the game the two are one
+system: every coloured piece of text goes through a named class, which the
+player's style turns into either their colour for it or a tag. So `xml.lua` paints the text
+between a pair of tags in that class's colour, read from `colour list` lines as they pass and
+kept in the profile (`elro_colours.lua`); until any are read, a default scheme. A class open
+across lines paints the untagged lines between, so the trigger looks at every line. In xml
+mode the client knows what text means (`<monster>`, `<exit>`), which plain mode cannot tell.
+`mobs.lua` uses that: a room listing starts at its `<short>`, its `<monster>` names wait for the
+prompt, when the room the move led to is known, and go into the room's `mobs` user data beside
+the notes, counted once a listing. Arrivals between listings are not kept: a wanderer would be
+noted everywhere it walks. Separate keys, one search: `mapnotes` lists both, `mobs` or `notes`
+narrows it. Doors were left out: only a server tag would find them reliably.
+A wanderer is still noted wherever it was listed, but read by share: each room counts its
+listings (`mobv`), and a name in under a third of them is a rare spawn when no other room of the
+area has it and a wanderer when one does (the user's distinction: a rare spawn is worth showing).
+Wanderers show only with `mapnotes mobs all`. A follower or pet is in every room you are, so it
+reads as a resident everywhere; `mapmobs ignore` is the one hand-kept list. Writes stay per
+listing: user data lives in memory until the map is saved, and the measured cost is shown by
+`mapmobs`.
+
+`mapmanual twoway` assumes the way
+back where a room lists it; an assumed way is drawn and walked but never merges or splits a room.
+`mapmanual forget <room>` drops every sighting of a room split by a wrong step that no rule can
+catch (one through an exit the room has); the rooms split off with it then fold back.
 
 Walks are planned with Mudlet's `getPath` from the room the last `!NMP` named
 and sent as one burst, as they always were. Position is only ever what the

@@ -294,6 +294,20 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<regex>^maplevels(?:\s+(.+))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
+				<name>mapflags</name>
+				<script>elro.with_rest(matches[2], elro.cmd_flags)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapflags(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>mapmobs</name>
+				<script>elro.with_rest(matches[2], elro.cmd_mobs)</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapmobs(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
 				<name>mapexport</name>
 				<script>elro.with_rest(matches[2], elro.cmd_export)</script>
 				<command></command>
@@ -362,6 +376,13 @@ else say("walk watchdog: " .. (elro.walkWatchdog == false and "off" or tostring(
 				<command></command>
 				<packageName></packageName>
 				<regex>^mapcoins(?:\s+(.+))?$</regex>
+			</Alias>
+			<Alias isActive="yes" isFolder="no">
+				<name>mapmanual</name>
+				<script>elro.cmd_manual(matches[2])</script>
+				<command></command>
+				<packageName></packageName>
+				<regex>^mapmanual(?:\s+(.+))?$</regex>
 			</Alias>
 			<Alias isActive="yes" isFolder="no">
 				<name>mapimport</name>

@@ -288,6 +288,8 @@ elro.classColours = {
   -- A typed exit ("enter hut") between two rooms of one canvas: no direction, so the
   -- line says only "these connect". Grey and dotted, unlike every line that is a claim.
   special  = { 150, 150, 160 },   -- grey: recorded special exits (see draw_special)
+  -- A room's glyph while one of its named non-compass exits has never been walked.
+  untried  = { 120, 140, 255 },   -- light slate blue, the unexplored stubs' family
 }
 
 

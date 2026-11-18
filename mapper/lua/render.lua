@@ -626,6 +626,8 @@ end
 function elro.draw_area_stubs(roomMap)
   if type(addCustomLine) ~= "function" or type(getRoomExits) ~= "function"
      or type(getRoomCoordinates) ~= "function" then return end
+  local flags = elro.flags and elro.flags.clear and elro.flags
+  if flags then flags.clear(roomMap) end
   for r in pairs(roomMap) do
     if roomExists(r) then
       local rx, ry, rz = getRoomCoordinates(r)
@@ -677,6 +679,7 @@ function elro.draw_area_stubs(roomMap)
                 { { rx, ry, rz }, { hx, hy, rz }, { vp[1], vp[2], rz } }, d,
                 "dash line", col, true)
             else
+              if flags and not mazebound and dest ~= elro.OFF_ROOM then flags.add(r, d, del, dest, hx, hy, rz) end
               pcall(addCustomLine, r, { { rx, ry, rz }, { hx, hy, rz } }, d,
                 "solid line", col, true)
             end
@@ -1239,6 +1242,11 @@ local function step_enter(homeArea)
   end
   -- clear the blue cross-area stubs: their points are fixed map coords, so once rooms park
   -- off-screen the stale stubs would litter the origin. step_restore redraws them on exit.
+  if elro.flags and elro.flags.clear then
+    local set = {}
+    for _, r in pairs(rooms) do set[r] = true end
+    elro.flags.clear(set)
+  end
   if type(getCustomLines) == "function" and type(removeCustomLine) == "function" then
     for _, r in pairs(rooms) do
       if roomExists(r) then
