@@ -808,7 +808,7 @@ answer, starting when it was sent: chatter between commands ("Bob grins") and th
 line were read as names, and every misread name is a false twin. `WORDS.noise` holds the lines
 that can still land first (sound codes, the `**` status line). The game's xml mode (`toggle xml`)
 tags the name `<short>`: tags are stripped so a line reads as in plain mode and the keys match,
-and while rooms arrive tagged only a `<short>` line can be a name. `xml.lua` cuts the tags out of
+and while rooms arrive tagged only a `<short>` line can be a name. `xmlcore.lua` cuts the tags out of
 the screen too, but only a tag whose pair is proven (its close on the line, or a close matching
 an open of an earlier line), since game text can hold a word in angle brackets of its own. Lines
 already shown are never edited: an unknown tag that opens without closing stays visible once,
@@ -817,11 +817,13 @@ output are known from the start.
 
 xml mode was unattractive because it drops the ANSI colours, but in the game the two are one
 system: every coloured piece of text goes through a named class, which the
-player's style turns into either their colour for it or a tag. So `xml.lua` paints the text
-between a pair of tags in that class's colour, read from `colour list` lines as they pass and
-kept in the profile (`elro_colours.lua`); until any are read, a default scheme. A class open
-across lines paints the untagged lines between, so the trigger looks at every line. In xml
-mode the client knows what text means (`<monster>`, `<exit>`), which plain mode cannot tell.
+player's style turns into either their colour for it or a tag. Painting the text between a
+pair of tags in that class's colour is how text looks, so it is NannyBasics' (its
+`xmlcolours.lua`, with the damage tiers); the mapper only reads. `xmlcore.lua` is the shared
+part, vendored byte-identical in both packages like `border.lua`, the newest REV winning: it
+cuts the tags and tells listeners what each class said, and hands each cut line to readers. A
+class open across lines covers the untagged lines between, so the trigger looks at every line.
+In xml mode the client knows what text means (`<monster>`, `<exit>`), which plain mode cannot.
 `mobs.lua` uses that: a room listing starts at its `<short>`, its `<monster>` names wait for the
 prompt, when the room the move led to is known, and go into the room's `mobs` user data beside
 the notes, counted once a listing. Arrivals between listings are not kept: a wanderer would be

@@ -99,7 +99,7 @@ In Mudlet, `nanny help` lists these, `nanny help <command>` shows one in full an
 
 ### The package
 
-- **`nanny help [command or word]`** Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do) and 'nanny help game' (the toggles in the game).
+- **`nanny help [command or word]`** Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do), 'nanny help game' (the toggles in the game) and 'nanny help xml' (the game's xml mode and your colours).
 - **`nanny update [file]`** Download the newest release and swap it in, the map too if you have it. If the download fails nothing is changed; your layout is kept. With a file, install that package file instead. Shortly after Mudlet starts you are told when a release is out.
 - **`nanny src [path|off]`** For development: load nannybasics.lua from this path instead of the package's own copy, so 'nanny reload' picks up edits; 'off' goes back to the built-in copy from the next start.
 - **`nanny reload`** Load the file set with 'nanny src' again.

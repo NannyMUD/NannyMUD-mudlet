@@ -120,8 +120,8 @@ end
 -- A room listing starts at its <short>; its <monster> lines wait for the prompt, when the
 -- room the move led to is known.
 B.pending, B.listing = B.pending or {}, B.listing or false
-if elro.xml and elro.xml.listen then
-  elro.xml.listen("mobs", function(class, text)
+if NannyXml and NannyXml.listen then
+  NannyXml.listen("mobs", function(class, text)
     if class == "short" then B.listing, B.pending = true, {}
     elseif class == "monster" and B.listing then
       local name = B.clean(text)
@@ -242,5 +242,5 @@ function elro.cmd_mobs(arg)
       what, c.n, c.sum / c.n * 1000, c.max * 1000))
   end
   ms(B.cost, "noting a room listing")
-  if elro.xml and elro.xml.cost then ms(elro.xml.cost, "reading a tagged line") end
+  if NannyXml and NannyXml.cost then ms(NannyXml.cost, "reading a tagged line") end
 end

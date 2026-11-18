@@ -257,7 +257,7 @@ end
 
 -- the tags cut from the screen: where each one is, counted from 0
 do
-  local X = elro.xml
+  local X = NannyXml
   local sp = X.plan("<short>A small cyan room</short>.")
   eq(#sp, 2, "two tags")
   eq(sp[1][1] == 0 and sp[1][2] == 7, true, "<short> at the start")

@@ -2,7 +2,7 @@
 -- you are in; mapnotes finds them beside the notes, 'mobs' and 'notes' filter one or the other.
 -- Run: luajit analysis/test_mobs.lua      (from the client dir)
 dofile("analysis/engine_load.lua")
-local B, X = elro.mobs, elro.xml
+local B, X = elro.mobs, NannyXml
 
 local fail, checks = 0, 0
 local function eq(got, want, what)

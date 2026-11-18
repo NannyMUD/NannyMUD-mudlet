@@ -2735,7 +2735,7 @@ HELP.sections = {
   } },
   { title = "The package", rows = {
     { "nanny help [command or word]", "this list; a command in full, or a search",
-      "Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do) and 'nanny help game' (the toggles in the game)." },
+      "Bare, this list. 'nanny help <command>' gives that command in full ('nanny help rot'); any other word lists every command and page that mentions it. The pages: 'nanny help mouse' (what dragging and clicking do), 'nanny help game' (the toggles in the game) and 'nanny help xml' (the game's xml mode and your colours)." },
     { "nanny update [file]", "install the newest release",
       "Download the newest release and swap it in, the map too if you have it. If the download fails nothing is changed; your layout is kept. With a file, install that package file instead. Shortly after Mudlet starts you are told when a release is out." },
     { "nanny src [path|off]", "development: load the code from a file",
@@ -2751,6 +2751,11 @@ HELP.pages = {
     "Chat tabs|Drag a tab out of the chat's tab bar to give it a pane of its own, placed where you drop it; right-clicking the tab does the same. Drag that pane's strip back onto the chat pane, or right-click the strip, to put it back among the tabs.",
     "The rotation strip|On the Strigoi guild pane, left click steps the mode, right click picks the next list.",
     "Sizes, places and closed panes are remembered across restarts.",
+  } },
+  xml = { title = "The game's xml mode", paras = {
+    "What it is|'toggle xml' in the game marks what each piece of text is (a monster, an exit, a tell) instead of colouring it. The client cuts the marks out and colours the text itself, and the mapper uses them to note monsters per room.",
+    "Your colours|Type 'colour list' once, in the game's normal colour mode or in xml mode: the client reads your colours as they pass and keeps them. Until then it uses a default scheme.",
+    "Hits|A hit is coloured by its damage tier, from the sound the game sends after it, with the tier in front ('7: You hit ...'). Turn off a script of your own that does the same.",
   } },
   game = { title = "In the game", code = true, paras = {
     "The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.",
@@ -2839,7 +2844,7 @@ function N.help(arg)
     cecho("\n")
     short_row("nanny help <command>", "that command in full")
     short_row("nanny help <word>", "every entry that mentions the word")
-    short_row("nanny help mouse|game", "dragging and clicking; the toggles in the game")
+    short_row("nanny help mouse|game|xml", "dragging and clicking; the toggles in the game; xml mode")
   elseif r.kind == "detail" then
     for _, row in ipairs(r.rows) do
       cecho("\n<yellow>  " .. row[1] .. "<reset>\n")
