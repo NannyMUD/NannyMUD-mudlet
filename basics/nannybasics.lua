@@ -1206,7 +1206,7 @@ end
 -- The game's own lines: a harvest that worked (worded by the stat gained) and its end. A gain
 -- line restarts the bar, since a second harvest can leave the bonus as it was; one a moment
 -- after the guild data started it is the same harvest.
-local HARVEST_LINES = "^(?:> )*(?:The (?:magical )?essence of the dead (fades|fills you|empowers you)"
+local HARVEST_LINES = "^(?:</?[a-z_]+>|> )*(?:The (?:magical )?essence of the dead (fades|fills you|empowers you)"
   .. "|You look lighter, your movements silent like the shadows!"
   .. "|Your muscles swell with strength, gaining the power of the fallen!)"
 function N.harvest_line(what)
@@ -1281,7 +1281,10 @@ end
 -- proves it is no longer than that. Why: basics/README.md, Tome.
 local TOME_ANSWER, TOME_SLOP = 5, 2   -- seconds a chant may wait for its answer; timing jitter
 local TOME_TIGHT = 5                  -- limits this close are as good as knowing the length
-local TOME_LINES = "^(?:> )*(You feel the magic power surrounds you as you chant"
+-- a chant that works this long after the release says nothing about the cooldown: hours later,
+-- "no longer than 40000 s" is true and useless, and the bar would say maybe all day
+local TOME_HI_MAX = 1800
+local TOME_LINES = "^(?:</?[a-z_]+>|> )*(You feel the magic power surrounds you as you chant"
   .. "|You feel mentally exhausted, and fail to memorize"
   .. "|You point at .+ and\\b|(?:turn )?(?:the )?powers loose\\.$)"
 
@@ -1369,6 +1372,7 @@ local function tome_take()
 end
 
 local function tome_worked(s, e)
+  if e > TOME_HI_MAX then return end
   s.hi = math.min(s.hi or math.huge, math.ceil(e))
   if e < (s.lo or 0) - TOME_SLOP then s.lo = nil
   elseif (s.lo or 0) > s.hi then s.lo = s.hi end
@@ -1503,6 +1507,7 @@ end
 local function tome_bar(w, now)
   local on, s = TM.on[w], TM.spells[w] or {}
   local e, lo, hi, g = on and now - on, s.lo or 0, s.hi, "#16182a"
+  if hi and hi > TOME_HI_MAX then hi = nil end      -- learned before that limit; tells nothing
   local icon = tome_icon(w)
   local function label(t) return slotted(icon, w .. "  " .. t) end
   if not on or (hi and e >= hi) then return 1, 1, label("ready"), "#3a8f3a", g end
@@ -2047,7 +2052,7 @@ end
 -- stack, or the game refuses it. Variants, mode and key are kept in the profile.
 
 local ROT_WAIT, ROT_SOON, ROT_PAUSE, ROT_BLOCK, ROT_STALE, ROT_ANSWER = 3, 3, 1, 10, 10, 1
-local ROT_REFUSED = "^(?:> )*(The power cannot take hold again while"
+local ROT_REFUSED = "^(?:</?[a-z_]+>|> )*(The power cannot take hold again while"
   .. "|You call upon the shadows, but the curse"
   .. "|You are mentally weak to do that\\."
   .. "|Something far powerful than you won't allow that so fast\\.)"
@@ -2765,7 +2770,7 @@ HELP.pages = {
   xml = { title = "The game's xml mode", paras = {
     "What it is|xml mode marks what each piece of text is (a monster, an exit, a tell) instead of colouring it. The client cuts the marks out and colours the text itself, and the mapper uses them to note monsters per room. 'nanny xml on' turns it on, and so does 'mapmobs on'.",
     "Your colours|Each time the mode comes on the client asks the game for your 'colour list', out of sight, and paints in those colours. If you set none, nothing is painted, as you saw it before; 'nanny xml defaults on' uses a built-in scheme. Change a colour in the game ('colour say yellow') and 'nanny xml off', 'nanny xml on' picks it up.",
-    "Hits|'nanny xml hits on' colours each hit by its damage tier, from the sound the game sends after it: your hits from light yellow up to deep pink, the hits on you from pale blue up to magenta, so the two stay apart; a miss is tier 0, a muted tan or grey. 'nanny xml hits mine' colours only yours. A hit left in its usual colour: 'nanny xml hits trace' shows how each hit and sound paired. Off by default: it paints over your own attack colour. 'nanny xml numbers on' also puts the tier in front ('7: You hit ...'). Turn off a script of your own that does the same.",
+    "Hits|'nanny xml hits on' colours each hit by its damage tier, from the sound the game sends after it: your hits from light yellow up to deep pink, the hits on you from pale blue up to magenta, so the two stay apart; a miss is tier 0, a muted tan or grey. 'nanny xml hits mine' colours only yours. A hit left in its usual colour: 'nanny xml hits trace' shows how each hit and sound paired. A line coloured differently from the game's colours: 'nanny xml classes' names the classes of each line. Off by default: it paints over your own attack colour. 'nanny xml numbers on' also puts the tier in front ('7: You hit ...'). Turn off a script of your own that does the same.",
   } },
   game = { title = "In the game", code = true, paras = {
     "The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.",

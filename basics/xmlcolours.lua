@@ -54,9 +54,12 @@ end
 -- a class's { fg, bg }, or nil: the player's own once any are known. An empty 'colour list'
 -- means the player set none and saw the game's text uncoloured, so nothing is painted then,
 -- unless they asked for the defaults; before any list is read, the defaults.
+-- classes the game itself colours when the player set none, so 'colour list' never names them
+C.GAME = { danger = { "red" }, danger_raw = { "magenta" } }
+
 function C.of(class)
   if not C.set then C.load() end
-  if next(C.set) then return C.set[class] end
+  if next(C.set) then return C.set[class] or C.GAME[class] end
   local d = C.opts.defaults
   if d == true or (d == nil and not C.opts.empty) then return C.defaults[class] end
   return nil
@@ -126,7 +129,11 @@ function C.cmd(arg)
   local h = arg:match("^hits%s+(%a+)$")
   local d = arg:match("^defaults%s+(%a+)$")
   local nb = arg:match("^numbers%s+(%a+)$")
-  if nb == "on" or nb == "off" then
+  if arg == "classes" then
+    C.showClasses = not C.showClasses
+    say(C.showClasses and "each tagged line is followed by its classes and their colours. 'nanny xml classes' again stops."
+        or "classes no longer shown.")
+  elseif nb == "on" or nb == "off" then
     if not C.set then C.load() end
     C.opts.numbers = nb == "on"
     C.save()
@@ -192,12 +199,18 @@ if X and X.on_state then
   X.on_state("colours", function(on) if on then C.ask_colours() end end)
 end
 
-local function paint(sp)
+-- `base`: the colour of untouched text; a span already in another colour was coloured by a
+-- trigger of the player's (a highlight), and that wins
+local function paint(sp, base)
   local c = C.of(sp[3])
   if not c then return end
   local fg, bg = C.rgb(c[1]), C.rgb(c[2])
   if not fg and not bg then return end
   if not selectSection(sp[1], sp[2]) then return end
+  if base and type(getFgColor) == "function" then
+    local r, g, b = getFgColor()
+    if r and (r ~= base[1] or g ~= base[2] or b ~= base[3]) then return end
+  end
   if fg then
     if fg[1] then setFgColor(fg[1], fg[2], fg[3]) end
     if fg[4] and type(setBold) == "function" then setBold(true) end
@@ -293,9 +306,22 @@ function C.line(info)
     for _, w in ipairs(info.wholes) do if w[1] == "sound" then C.hit_sound(w[2], info.here) end end
     return
   end
+  -- 'nanny xml classes': which classes each line was tagged with, for a line coloured oddly
+  if C.showClasses and #info.spans > 0 and type(tempTimer) == "function" then
+    local names, seen = {}, {}
+    for _, sp in ipairs(info.spans) do
+      if not seen[sp[3]] then
+        seen[sp[3]] = true
+        local c = C.of(sp[3])
+        names[#names + 1] = sp[3] .. (c and (" (" .. c[1] .. (c[2] and (" on " .. c[2]) or "") .. ")") or " (not set)")
+      end
+    end
+    local s = table.concat(names, ", ")
+    tempTimer(0, function() cecho("\n<dim_grey>[xml] " .. s .. "<reset>") end)
+  end
   local now = {}                            -- hits a waiting sound paints, once the spans are done
   for _, sp in ipairs(info.spans) do
-    paint(sp)
+    paint(sp, info.base)
     -- a hit's text, line by line: a new one is a hit of its own unless it runs on from the line before
     if C.HIT_CLASS[sp[3]] and info.here and C.opt("hits") then
       prune(info.here)

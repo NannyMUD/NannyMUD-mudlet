@@ -209,6 +209,13 @@ N.tome_probe_tick()
 check(T.probe.zap == nil, "no answer twice: probing stops")
 T.spells.bolt, T.on.bolt, T.spells.zap, T.on.zap, T.stored = nil, nil, nil, nil, nil
 
+-- a chant that works hours after the release teaches no limit, and an old one is not shown
+T.spells.curse, T.on.curse, T.stored = { lo = 30 }, clock, "curse"
+clock = clock + 40000
+chant("chant curse", MAGIC)
+check(T.spells.curse.hi == nil, "works hours after the release: no limit learned")
+T.spells.curse, T.on.curse, T.stored = nil, nil, nil
+
 N.cmd("tome forget slow")
 check(T.spells.slow == nil and T.on.slow == nil, "forget removes a bar")
 check(not N.cd_wanted(), "nothing left: the card hides again")

@@ -12,7 +12,7 @@
 -- known, stack, cost, state, want, on_state, answer, untag. Raise REV with every change; a
 -- break needs a new global name.
 
-local REV = 3
+local REV = 4
 NannyXml = NannyXml or {}
 local X = NannyXml
 if (X.REV or 0) > REV then return X end
@@ -143,7 +143,8 @@ end
 
 -- One line of the console. Listeners hear each span's text; line readers get the line once its
 -- tags are cut, while it is still the current line: { spans, wholes, text, here, carried,
--- empty }, carried being the classes open from the line before. A line left blank goes.
+-- empty, base }, carried being the classes open from the line before, base the colour of text
+-- no trigger has touched (nil when unknown). A line left blank goes.
 function X.strip()
   local s = line or ""
   if #X.stack == 0 and not s:find("<", 1, true) then return end
@@ -156,6 +157,13 @@ function X.strip()
     local piece = text:sub(sp[1] + 1, sp[1] + sp[2])
     for _, fn in pairs(X.listeners) do pcall(fn, sp[3], piece) end
   end
+  -- the colour of untouched text, read off a tag before it goes: a listener can tell text a
+  -- trigger has coloured already (a highlight) from text no one has
+  local base
+  if cut[1] and type(getFgColor) == "function" and selectSection(cut[1][1], 1) then
+    local r, g, b = getFgColor()
+    if r then base = { r, g, b } end
+  end
   if not empty then
     -- right to left, so a cut never moves the next one
     for i = #cut, 1, -1 do
@@ -164,7 +172,7 @@ function X.strip()
     deselect()
   end
   local info = { spans = spans, wholes = wholes, text = text, carried = carried, empty = empty,
-                 here = type(getLineNumber) == "function" and getLineNumber() or nil }
+                 base = base, here = type(getLineNumber) == "function" and getLineNumber() or nil }
   for _, fn in pairs(X.lines) do pcall(fn, info) end
   if type(resetFormat) == "function" then resetFormat() end
   if empty then deleteLine() end

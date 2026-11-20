@@ -26,9 +26,23 @@ setFgColor = function(r, g, b)
   for i = sel[2] + 1, sel[2] + sel[3] do L.c[i] = r .. "," .. g .. "," .. b end
 end
 setBgColor = function() end
+-- the colours of the text after the replaced part move with it, as in Mudlet
 replace = function(s)
   local L = buf[sel[1] + 1]
+  local n = #L.t
   L.t = L.t:sub(1, sel[2]) .. s .. L.t:sub(sel[2] + sel[3] + 1)
+  local c, shift = {}, #s - sel[3]
+  for i = 1, n do
+    if i <= sel[2] then c[i] = L.c[i]
+    elseif i > sel[2] + sel[3] then c[i + shift] = L.c[i] end
+  end
+  L.c = c
+end
+-- the colour at the selection's start; text no one coloured is the console's plain grey
+getFgColor = function()
+  local v = buf[sel[1] + 1].c[sel[2] + 1] or "192,192,192"
+  local r, g, b = v:match("(%d+),(%d+),(%d+)")
+  return tonumber(r), tonumber(g), tonumber(b)
 end
 insertText = function(s)
   local L = buf[cur + 1]
@@ -50,6 +64,7 @@ eq(C.learn_line("Class: 'say' ('<say>say</say>') yellow, background blue"), true
 eq(C.of("monster")[1], "boldgreen", "the player's own colour")
 eq(C.of("say")[2], "blue", "...and background")
 eq(C.of("exit"), nil, "once learned, a class the player has not set stays plain")
+eq(C.of("danger")[1], "red", "...except one the game colours itself when unset: [dangerous] red")
 local c = C.rgb("boldgreen")
 eq(c and c[4] == nil and c[2] == 255, true, "boldgreen: the bright green, not a bold font")
 eq(C.rgb("default"), nil, "'default' leaves the colour alone")
@@ -58,6 +73,14 @@ eq(C.rgb("default"), nil, "'default' leaves the colour alone")
 push("A <monster>troll</monster> is here.") ; NannyXml.strip()
 eq(buf[1].t, "A troll is here.", "the tags are cut")
 eq(buf[1].c[3] ~= nil and buf[1].c[1] == nil, true, "the monster's name is painted, the rest not")
+-- a trigger of the player's coloured the text before us (a highlight): theirs wins
+buf = {}
+push("<monster>A wolf.</monster>")
+for i = 10, 16 do buf[1].c[i] = "1,2,3" end
+NannyXml.strip()
+eq(buf[1].t, "A wolf.", "the tags are cut")
+eq(buf[1].c[1], "1,2,3", "text a trigger coloured keeps that colour")
+buf = {}
 
 -- hits by tier: off by default, so the player's own attack colour stands
 C.set, C.opts = { attack = { "red" } }, {}
