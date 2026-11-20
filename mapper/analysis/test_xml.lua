@@ -63,5 +63,13 @@ line = "no tags here" ; X.strip()
 eq(#lines, 2, "an untagged line outside any class is left alone")
 X.listen("t", nil) ; X.on_line("t", nil)
 
+-- untag: a channel message from GMCP, tags cut, its own brackets kept, nothing learned
+local stack = #X.stack
+eq(X.untag("<club_tailors_low>(>Tailors Info<) Ilse enters.</club_tailors_low>"),
+   "(>Tailors Info<) Ilse enters.", "untag: a pair in the text is cut, the text's own <> stay")
+eq(X.untag("give <item> to <player>"), "give <item> to <player>", "untag: no proof, no cut")
+eq(X.known.club_tailors_low, nil, "untag learns no names")
+eq(#X.stack, stack, "...and leaves the console's open classes alone")
+
 print(string.format("test_xml: %d check(s), %d failure(s)", checks, fail))
 os.exit(fail > 0 and 1 or 0)

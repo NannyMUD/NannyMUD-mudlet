@@ -51,7 +51,7 @@ eq(C.of("monster")[1], "boldgreen", "the player's own colour")
 eq(C.of("say")[2], "blue", "...and background")
 eq(C.of("exit"), nil, "once learned, a class the player has not set stays plain")
 local c = C.rgb("boldgreen")
-eq(c and c[4], true, "bold colours are bold")
+eq(c and c[4] == nil and c[2] == 255, true, "boldgreen: the bright green, not a bold font")
 eq(C.rgb("default"), nil, "'default' leaves the colour alone")
 
 -- a class is painted once its tags are cut
@@ -68,15 +68,61 @@ buf = {}
 cecho = function() end
 C.cmd("hits on")
 eq(C.opt("hits"), true, "nanny xml hits on")
--- on: the sound after the hit paints it and puts the tier in front
+-- on: the sound after the hit paints it, the text left as it was
+push("<attack>You hit the troll.</attack>") ; NannyXml.strip()
+push('<sound class="combat/default/hit_7*" kind="sound"/>') ; NannyXml.strip()
+eq(buf[1].t, "You hit the troll.", "numbers off by default: the text as it was")
+eq(buf[1].c[1], "255,99,71", "...in tier 7's colour")
+buf = {}
+C.cmd("numbers on")
+eq(C.opt("numbers"), true, "nanny xml numbers on")
+-- numbers on: the tier in front too
 push("<attack>You hit the troll very hard.</attack>") ; NannyXml.strip()
 push('<sound class="combat/default/hit_7*" kind="sound"/>') ; NannyXml.strip()
 eq(#buf, 1, "the sound's own line goes")
 eq(buf[1].t, "7: You hit the troll very hard.", "the hit gets its tier in front")
 eq(buf[1].c[10], "255,99,71", "...and tier 7's colour")
+color_table.tan = { 210, 180, 140 }
 push("<attack>You miss.</attack>") ; NannyXml.strip()
 push('<sound class="combat/default/miss*"/>') ; NannyXml.strip()
-eq(buf[2].t, "You miss.", "a miss: no tier")
+eq(buf[2].t, "0: You miss.", "a miss: tier 0")
+eq(buf[2].c[5], "210,180,140", "...the foot of the scale")
+-- a hit on you: its tier from a scale of its own; 'hits mine' leaves it alone
+color_table.medium_slate_blue = { 123, 104, 238 }
+buf = {}
+push("<attacked>The troll hits you hard.</attacked>") ; NannyXml.strip()
+push('<sound class="combat/default/hit_6*"/>') ; NannyXml.strip()
+eq(buf[1].t, "6: The troll hits you hard.", "a hit on you gets its tier")
+eq(buf[1].c[10], "123,104,238", "...in the cool scale's tier 6, not the warm one")
+-- two attacks before their two sounds: each sound paints its own, in order
+buf = {}
+push("<attacked>The troll missed you.</attacked>") ; NannyXml.strip()
+push("<attacked>The troll hits you.</attacked>") ; NannyXml.strip()
+push('<sound class="combat/default/miss*"/>') ; NannyXml.strip()
+push('<sound class="combat/default/hit_2*"/>') ; NannyXml.strip()
+eq(buf[1].t, "0: The troll missed you.", "the first sound paints the first attack")
+eq(buf[2].t, "2: The troll hits you.", "...the second the second")
+eq(buf[1].c[5], "119,136,153", "a miss on you: the foot of the cool scale")
+-- a sound before its hit waits for it
+buf = {}
+push('<sound class="combat/default/miss*"/>') ; NannyXml.strip()
+push("<attacked>The whelp missed you.</attacked>") ; NannyXml.strip()
+eq(buf[1].t, "0: The whelp missed you.", "a sound that came first paints the next hit")
+eq(buf[1].c[5], "119,136,153", "...in its tier's colour")
+-- a hit over two lines: the second line takes the colour the first got
+buf = {}
+push("<attack>You hit the whelp so hard that it")
+NannyXml.strip()
+push("staggers back.</attack>") ; NannyXml.strip()
+push('<sound class="combat/default/hit_7*"/>') ; NannyXml.strip()
+eq(buf[2].c[3], "255,99,71", "both lines of one hit are painted")
+C.cmd("hits mine")
+eq(C.opt("hits"), "mine", "nanny xml hits mine")
+buf = {}
+push("<attacked>The troll hits you hard.</attacked>") ; NannyXml.strip()
+push('<sound class="combat/default/hit_6*"/>') ; NannyXml.strip()
+eq(buf[1].t, "The troll hits you hard.", "hits mine: a hit on you is left alone")
+C.cmd("hits on")
 
 -- the game's switch: 'toggle xml on', and off by going back to the game's colours
 local sent = {}

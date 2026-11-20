@@ -590,6 +590,8 @@ function N.channel(v)
   local talker = tostring(v.talker or "")
   -- the game may send the line already wrapped; the pane wraps it to its own width
   local text = tostring(v.text or ""):gsub("\27%[[%d;]*m", ""):gsub("%s*\n%s*", " ")
+  -- in the game's xml mode the message carries its class tags too
+  if type(NannyXml) == "table" and NannyXml.untag then text = NannyXml.untag(text) end
   text = text:gsub("^%s+", ""):gsub("%s+$", "")
   local at = os.date("%H:%M")
   for _, name in ipairs({ "All", ch }) do
@@ -2452,8 +2454,9 @@ local function installed(name)
 end
 
 function N.update_swap(path)
-  if N._updBusy then return end
+  if N._updBusy then say("an install is already running; wait a few seconds.") return end
   N._updBusy = true
+  say("installing " .. path .. "...")
   local function try(left)
     local ok, err = pcall(installPackage, path)
     if ok and installed("NannyBasics") then
@@ -2497,7 +2500,10 @@ end
 -- set when the mapper's update calls this, so the two do not call each other back.
 function N.update(alone, file)
   local now = os.time()
-  if N._updAt and now - N._updAt < 30 then return end
+  if N._updAt and now - N._updAt < 30 then
+    say("an update ran " .. (now - N._updAt) .. " s ago; try again in half a minute.")
+    return
+  end
   N._updAt = now
   -- a local build (testing): swap it in, no download, the other package left alone
   if file and file ~= "" then
@@ -2728,8 +2734,8 @@ HELP.sections = {
       "For the Strigoi: repeating a power costs you, so you mix several. Bare, your lists, the mode and the commands. 'set <name> <power>, <power>, ...' saves a list, written exactly as you would type the powers, and picks it; 'use <name>' picks one, 'del <name>' deletes one. 'off', 'key' and 'auto' set the mode: stopped, one power each time you press, or on its own. 'go' sends the next power in key mode, and 'bind <key>' puts that on a key such as F5 ('bind off' removes it). 'open <power>' starts each new fight with that power ('open off' stops). 'trace' prints every send, landing and refusal, or stops. It needs the foe gauge and the guild pane, and nothing goes out without a foe." },
     { "nanny news [all|version]", "what changed in each release",
       "Bare, what is not released yet and what the latest release brought, each with the help that tells more. 'all' lists every release, a version number one of them." },
-    { "nanny xml [on|off [ansi|plain]|hits on|off|defaults on|off]", "the game's xml mode, in your own colours",
-      "'on' and 'off' switch the game's xml mode; off goes back to the game's colours, or with 'off plain' to plain text without any, which is remembered ('off ansi' undoes it). The mode marks what each piece of text is; the client cuts the marks and colours the text in your own colours, read from the game's 'colour list' each time the mode comes on. An empty list means you set none and saw the text uncoloured, so nothing is painted; 'defaults on' uses a built-in scheme instead. 'hits on' colours each hit by its damage tier, with the tier in front; off by default, since it paints over your own attack colour. Bare, where it all stands. 'nanny help xml' explains more." },
+    { "nanny xml [on|off [ansi|plain]|hits on|mine|off|numbers on|off|defaults on|off]", "the game's xml mode, in your own colours",
+      "'on' and 'off' switch the game's xml mode; off goes back to the game's colours, or with 'off plain' to plain text without any, which is remembered ('off ansi' undoes it). The mode marks what each piece of text is; the client cuts the marks and colours the text in your own colours, read from the game's 'colour list' each time the mode comes on. An empty list means you set none and saw the text uncoloured, so nothing is painted; 'defaults on' uses a built-in scheme instead. 'hits on' colours each hit by its damage tier, yours on a warm scale and those on you on a cool one, 'hits mine' only yours; off by default, since it paints over your own attack colour. 'numbers on' also puts the tier in front of the hit. Bare, where it all stands. 'nanny help xml' explains more." },
     { "nanny tome [probe|hide|show|relearn|forget] [spell]", "what the Cooldowns card has learned",
       "Bare, the spell you have stored and what the Cooldowns card has learned about each spell's cooldown. 'probe <spell>' learns a cooldown for you: after each release the spell is chanted every few seconds until a chant works, never while a spell is stored, and the game's refusals are hidden; it stops by itself once the cooldown is known, 'probe off' stops it at once. 'hide <spell>' hides a bar and keeps what was learned, 'show <spell>' brings it back. 'relearn' (or 'relearn <spell>') after something shortened your cooldowns: the bar says maybe from the release, and a few early tries find the new length. 'forget <spell>' wipes what was learned about a spell." },
     { "nanny icons [dark|emoji]", "the cooldown icons",
@@ -2759,7 +2765,7 @@ HELP.pages = {
   xml = { title = "The game's xml mode", paras = {
     "What it is|xml mode marks what each piece of text is (a monster, an exit, a tell) instead of colouring it. The client cuts the marks out and colours the text itself, and the mapper uses them to note monsters per room. 'nanny xml on' turns it on, and so does 'mapmobs on'.",
     "Your colours|Each time the mode comes on the client asks the game for your 'colour list', out of sight, and paints in those colours. If you set none, nothing is painted, as you saw it before; 'nanny xml defaults on' uses a built-in scheme. Change a colour in the game ('colour say yellow') and 'nanny xml off', 'nanny xml on' picks it up.",
-    "Hits|'nanny xml hits on' colours a hit by its damage tier, from the sound the game sends after it, with the tier in front ('7: You hit ...'). Off by default: it paints over your own attack colour. Turn off a script of your own that does the same.",
+    "Hits|'nanny xml hits on' colours each hit by its damage tier, from the sound the game sends after it: your hits from light yellow up to deep pink, the hits on you from pale blue up to magenta, so the two stay apart; a miss is tier 0, a muted tan or grey. 'nanny xml hits mine' colours only yours. A hit left in its usual colour: 'nanny xml hits trace' shows how each hit and sound paired. Off by default: it paints over your own attack colour. 'nanny xml numbers on' also puts the tier in front ('7: You hit ...'). Turn off a script of your own that does the same.",
   } },
   game = { title = "In the game", code = true, paras = {
     "The game sends each kind of data only to players who ask. Each toggle is typed in the game and remembered when you log in again.",

@@ -12,7 +12,9 @@ Run from anywhere:  python basics/build.py
 import os
 import sys
 import re
+import shutil
 import subprocess
+import tempfile
 from xml.sax.saxutils import escape
 
 here = os.path.dirname(os.path.abspath(__file__))
@@ -51,14 +53,29 @@ xmlcore = vendored('xmlcore.lua')
 body = open(os.path.join(here, 'nannybasics.lua'), encoding='utf-8').read()
 colours = open(os.path.join(here, 'xmlcolours.lua'), encoding='utf-8').read()
 changes = open(os.path.join(here, 'changes.lua'), encoding='utf-8').read()
+# '_ =' keeps Lua 5.1 from reading '(function()' as a call of the line before. The parts that
+# do not need the body go first: an error in the body's start-up then cannot skip them.
 lua = '-- vendored border coordinator (see border.lua); shared byte-for-byte with the mapper.\n' \
-      '(function()\n' + border + '\nend)()\n\n' \
+      'local _ = (function()\n' + border + '\nend)()\n\n' \
       '-- vendored xml tag reader (see xmlcore.lua); shared byte-for-byte with the mapper.\n' \
-      '(function()\n' + xmlcore + '\nend)()\n\n' + body + \
-      '\n\n-- the game\'s colours in xml mode (see xmlcolours.lua)\n' \
-      '(function()\n' + colours + '\nend)()\n' \
-      '\n-- what changed, release by release (see changes.lua)\n' \
-      '(function()\n' + changes + '\nend)()\n'
+      '_ = (function()\n' + xmlcore + '\nend)()\n\n' \
+      '-- the game\'s colours in xml mode (see xmlcolours.lua)\n' \
+      '_ = (function()\n' + colours + '\nend)()\n\n' \
+      '-- what changed, release by release (see changes.lua)\n' \
+      '_ = (function()\n' + changes + '\nend)()\n\n' + body
+
+# the whole script must compile, or Mudlet runs none of it
+lj = shutil.which('luajit')
+if lj:
+    with tempfile.NamedTemporaryFile('w', suffix='.lua', delete=False, encoding='utf-8') as t:
+        t.write(lua)
+    chunk = 'assert(loadfile([[' + t.name.replace('\\', '/') + ']]))'
+    r = subprocess.run([lj, '-e', chunk], capture_output=True, text=True)
+    os.remove(t.name)
+    if r.returncode != 0:
+        sys.exit('build: the script does not compile:\n' + r.stderr)
+else:
+    print('build: no luajit on PATH, the script was not compiled')
 
 xml = '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE MudletPackage>

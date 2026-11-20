@@ -6,7 +6,7 @@ NannyBasics = NannyBasics or {}
 NannyBasics.CHANGES = {
   { version = "next", items = {
     { "The game's xml mode in your own colours: 'nanny xml on' switches it, your 'colour list' is read by itself.", "nanny help xml" },
-    { "Hits can be coloured by their damage tier, with the tier in front ('nanny xml hits on').", "nanny help xml" },
+    { "Hits can be coloured by their damage tier, yours and those on you on two scales ('nanny xml hits on'), with the tier in front if you like ('nanny xml numbers on').", "nanny help xml" },
   } },
   { version = "0.9.0", date = "2026-11-12", items = {
     { "nanny help is one lookup: an exact command shows it in full, any other word searches.", "nanny help" },

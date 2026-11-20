@@ -9,10 +9,10 @@
 --
 -- Singleton in a neutral global: every package carries a copy and the NEWEST revision wins,
 -- whatever the load order. So the shared API may only grow: plan, listen, on_line, strip,
--- known, stack, cost, state, want, on_state, answer. Raise REV with every change; a break
--- needs a new global name.
+-- known, stack, cost, state, want, on_state, answer, untag. Raise REV with every change; a
+-- break needs a new global name.
 
-local REV = 2
+local REV = 3
 NannyXml = NannyXml or {}
 local X = NannyXml
 if (X.REV or 0) > REV then return X end
@@ -127,6 +127,18 @@ function X.plan(s)
   local wholes = {}
   for _, t in ipairs(tags) do if t.whole then wholes[#wholes + 1] = { t.name, t.attr } end end
   return cut, #cut > 0 and not text:match("%S"), spans, text, wholes
+end
+
+-- Text that never reaches the console (a GMCP channel message) with its tags cut: a whole
+-- element, a name proven before, or one whose close is in the text too. Learns nothing.
+function X.untag(s)
+  s = tostring(s or "")
+  if not s:find("<", 1, true) then return s end
+  local closed = {}
+  for name in s:gmatch("</([%a_]+)>") do closed[name] = true end
+  return (s:gsub("<(/?)([%a_]+)([^<>]*)>", function(_, name, attr)
+    if attr:sub(-1) == "/" or X.known[name] or closed[name] then return "" end
+  end))
 end
 
 -- One line of the console. Listeners hear each span's text; line readers get the line once its
