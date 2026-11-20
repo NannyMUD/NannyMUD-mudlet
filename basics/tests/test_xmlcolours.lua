@@ -89,8 +89,12 @@ push('<sound class="combat/default/hit_7*"/>') ; NannyXml.strip()
 eq(buf[#buf].t, "You hit the troll.", "hits off by default: no tier")
 buf = {}
 cecho = function() end
+local msp
+send = function(s) msp = s end
 C.cmd("hits on")
 eq(C.opt("hits"), true, "nanny xml hits on")
+eq(msp, "toggle msp on", "...turns the game's sounds on: the tier comes from them")
+send = nil
 -- on: the sound after the hit paints it, the text left as it was
 push("<attack>You hit the troll.</attack>") ; NannyXml.strip()
 push('<sound class="combat/default/hit_7*" kind="sound"/>') ; NannyXml.strip()

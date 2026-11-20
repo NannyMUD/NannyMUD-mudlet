@@ -155,6 +155,8 @@ function C.cmd(arg)
     if not C.set then C.load() end
     C.opts.hits = h == "mine" and "mine" or h == "on"
     C.save()
+    -- the tier comes from the hit's sound, which the game sends only with sound support on
+    if h ~= "off" and type(send) == "function" then send("toggle msp on", false) end
     say(h == "off" and "hits keep their class colour, no tier."
         or ((h == "on" and "your hits (warm) and the hits on you (cool) are" or "your hits are")
             .. " coloured by their damage tier" .. (C.opt("numbers") and ", with the tier in front."
