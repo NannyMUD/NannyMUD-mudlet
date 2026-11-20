@@ -793,7 +793,26 @@ join, the one whose ways agree most is taken. A real warp then shows as one room
 which the player joins with `mapmanual same`, a join past the grid; the other policy, accepting
 a contradiction once it repeats, would make a repeated misread a permanent false edge. A room
 shown with no command of ours waiting (flee, summons) makes the mapper lost: the next step was
-taken from somewhere else. mapmanual is for any area without the game's map, not only mazes. When a later
+taken from somewhere else. mapmanual is for any area without the game's map, not only mazes.
+A step into a room that does not list the way back (a dive, a fall, a slide) carries no move:
+taken as level, one dive shifted every later sighting a floor and every room walked back to
+became a copy. Gates (2026-11-19) join a learned area to the game's map so a speedwalk can cross
+it: a lone move in from a mapped room is kept as "entered from room G by west", a lone move out
+as "east leads to room H". H is a fixed target in the fold (stored negated, beside the wall's 0),
+so it proves sightings alike or apart; sightings entered by one gate are one room. Gates are
+recorded only while learning, the user's call: with learning off they are followed (an entry
+gate locates you at once) but never added. A move typed ahead records none: which room it left
+is not sure. The way in is written on the mapped room only into an empty, unexplored or off-map
+slot, so the map's own edges win.
+Every fresh start (a gate in, a lost walk) begins a piece of grid with no known place relative to
+the rest. In a vcompiled plain where dozens of rooms look alike, joining such a sighting to the
+first look-alike that does not contradict it put a whole stretch of the walk in the wrong place
+(2026-11-19). So a sighting joins a look-alike in another piece only on an anchor: a wall or a
+mapped room both lead to, or another place where the two pieces, once joined, hold look-alikes
+(those are then one room too: one place, one room). A room only one room looks like still joins
+on its looks, which the cube relies on. A place where the joined pieces hold different-looking
+rooms does not refuse the join: refusing on it lost a whole region of a walk with misread names.
+When a later
 step disagrees, the map is worked out again and the look-alikes come apart: the original keeps
 its map room, the twin gets a new one. This rests on one assumption, that exits never change,
 so a way that led the same place three times (`SURE`) and then elsewhere is not kept: one step

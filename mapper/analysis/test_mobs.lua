@@ -102,6 +102,45 @@ eq(any, false, "mapmobs ignore: out of every room")
 listing(3, { "Rex" })
 eq(B.list(3)[1][1] ~= "Rex" and #B.list(3) == 3, true, "...and never noted again")
 
+-- a player seen in a room is known: a monster named after them is their pet, never noted, and
+-- one noted before they were seen is no longer shown
+listing(3, { "Bram's wolf, Greyfang" })
+eq(#B.rows(3, true) > 0 and B.rows(3, true)[1][1] ~= nil, true, "before the owner is seen: noted")
+X.listeners.mobs("player", "Bram the Necromancer (good)")
+local shown = false
+for _, r in ipairs(B.rows(3, true)) do if r[1]:find("Bram", 1, true) then shown = true end end
+eq(shown, false, "once Bram is seen as a player, his pets are not shown")
+listing(3, { "Bram's undead attendant" })
+local noted = false
+for _, m in ipairs(B.list(3)) do if m[1] == "Bram's undead attendant" then noted = true end end
+eq(noted, false, "...and not noted")
+eq(B.is_pet("Tom's cat"), false, "a name with an owner nobody saw as a player is a monster")
+
+-- a room where players gather: nothing noted there
+elro.current, elro.offmap = 4, false
+elro.cmd_mobs("ignore here")
+eq(#B.list(4), 0, "ignore here: the room's monsters are gone")
+listing(4, { "A goblin." })
+eq(#B.list(4), 0, "...and none are noted")
+elro.current = 4
+elro.cmd_mobs("unignore here")
+listing(4, { "A goblin." })
+eq(#B.list(4), 1, "unignore here: noted again")
+
+-- a player's pet carries its owner's name first: '*' stands for any text
+listing(3, { "Rook's clay golem", "Gerda's clay golem", "Rook's homunculus", "A clay golem" })
+elro.cmd_mobs("ignore *'s clay golem")
+local left = {}
+for _, m in ipairs(B.list(3)) do left[m[1]] = true end
+eq(left["Rook's clay golem"] == nil and left["Gerda's clay golem"] == nil, true, "'*'s clay golem': every owner's")
+eq(left["A clay golem"] and left["Rook's homunculus"], true, "...the wild golem and other pets stay")
+elro.cmd_mobs("ignore rook's *")
+listing(3, { "Rook's ouroboros (sleeping)" })
+left = {}
+for _, m in ipairs(B.list(3)) do left[m[1]] = true end
+eq(left["Rook's homunculus"] == nil and left["Rook's ouroboros (sleeping)"] == nil, true,
+   "'rook's *': all of one owner's pets, odd characters and all")
+
 -- turning it on asks for the game's xml mode: the mapper alone only says so, 'anyway' asks
 local sent = {}
 send = function(s) sent[#sent + 1] = s end

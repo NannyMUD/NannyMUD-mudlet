@@ -54,18 +54,65 @@ local function save_ignored()
   for n in pairs(B.ignored()) do t[#t + 1] = n end
   table.sort(t)
   pcall(setMapUserData, "elro.mobs.ignore", table.concat(t, "\n"))
+  B.globs = nil
+end
+
+-- An ignored name with '*' in it is a pattern, '*' any text: "*'s clay golem" is every
+-- player's golem, "rook's *" all of one player's pets.
+local function glob(p)
+  return "^" .. p:gsub("[%^%$%(%)%%%.%[%]%+%-%?]", "%%%0"):gsub("%*", ".*") .. "$"
+end
+-- Players seen in rooms (<player>), kept with the map: a monster named "<player>'s ..." is
+-- that player's pet or summon, and follows them about like a follower of yours.
+function B.players()
+  if not B.pl then
+    B.pl = {}
+    local ok, s = pcall(getMapUserData, "elro.mobs.players")
+    for n in (ok and s or ""):gmatch("[^\n]+") do B.pl[n] = true end
+  end
+  return B.pl
+end
+
+function B.saw_player(text)
+  local n = (text or ""):match("^%s*(%a+)")
+  if not n or #n < 2 then return end
+  n = n:lower()
+  local pl = B.players()
+  if pl[n] then return end
+  pl[n] = true
+  local t = {}
+  for k in pairs(pl) do t[#t + 1] = k end
+  table.sort(t)
+  pcall(setMapUserData, "elro.mobs.players", table.concat(t, "\n"))
+end
+
+function B.is_pet(name)
+  local owner = name:match("^(%a+)'s ")
+  return owner ~= nil and B.players()[owner:lower()] == true
+end
+
+function B.is_ignored(name)
+  local n = name:lower()
+  local ign = B.ignored()
+  if ign[n] or B.is_pet(name) then return true end
+  if not B.globs then
+    B.globs = {}
+    for p in pairs(ign) do if p:find("*", 1, true) then B.globs[#B.globs + 1] = glob(p) end end
+  end
+  for _, g in ipairs(B.globs) do if n:match(g) then return true end end
+  return false
 end
 
 -- one listing of room `id` and the names in it: each counts once however many stand there
 function B.record(id, names, now)
-  if not id or not roomExists(id) then return end
+  if not id or not roomExists(id) or getRoomUserData(id, "mobsoff") == "1" then return end
   setRoomUserData(id, "mobv", tostring(B.visits(id) + 1))
   local t = B.list(id)
   local at = {}
   for i, m in ipairs(t) do at[m[1]] = i end
-  local seen, ign, added = {}, B.ignored(), false
+  local seen, added = {}, false
   for _, name in ipairs(names) do
-    if not seen[name] and not ign[name:lower()] then
+    if not seen[name] and not B.is_ignored(name) then
       seen[name] = true
       if at[name] then
         t[at[name]][2] = t[at[name]][2] + 1 ; t[at[name]][3] = now
@@ -105,8 +152,11 @@ end
 function B.rows(id, all)
   local out = {}
   for _, m in ipairs(B.list(id)) do
-    local k, v = B.kind(id, m)
-    if all or k ~= "wanders" then out[#out + 1] = { m[1], m[2], v, k } end
+    -- a pet noted before its owner was known as a player is left out too
+    if not B.is_ignored(m[1]) then
+      local k, v = B.kind(id, m)
+      if all or k ~= "wanders" then out[#out + 1] = { m[1], m[2], v, k } end
+    end
   end
   return out
 end
@@ -123,6 +173,7 @@ B.pending, B.listing = B.pending or {}, B.listing or false
 if NannyXml and NannyXml.listen then
   NannyXml.listen("mobs", function(class, text)
     if class == "short" then B.listing, B.pending = true, {}
+    elseif class == "player" then B.saw_player(text)
     elseif class == "monster" and B.listing then
       local name = B.clean(text)
       if name ~= "" then B.pending[#B.pending + 1] = name end
@@ -174,10 +225,23 @@ if type(registerMapInfo) == "function" then
   if type(enableMapInfo) == "function" then pcall(enableMapInfo, INFO) end
 end
 
--- mapmobs [on|off|clear [#id]|ignore [name]|unignore <name>]
+-- mapmobs [on|off|clear [#id]|ignore [name|here]|unignore <name|here>]
 function elro.cmd_mobs(arg)
   arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
   local function say(s) cecho("\n<green>[elro]: " .. s .. "\n<reset>") end
+  -- a room where players gather: their pets and summons come and go, nothing there is the room's
+  if arg == "ignore here" or arg == "unignore here" then
+    local id = elro.here_room and elro.here_room() or elro.current
+    if not id or not roomExists(id) then say("not in a known room.") return end
+    local off = arg == "ignore here"
+    setRoomUserData(id, "mobsoff", off and "1" or "")
+    if off then setRoomUserData(id, KEY, "") ; B.idx = nil end
+    if type(saveMap) == "function" then pcall(saveMap) end
+    say(off and string.format("no monsters are noted in %s (%d) any more; those noted are gone."
+          .. " 'mapmobs unignore here' undoes it.", getRoomName(id) or "this room", id)
+        or "monsters are noted in this room again.")
+    return
+  end
   local ign = arg:match("^ignore%s+(.+)$")
   if ign then
     ign = B.clean(ign):lower()
@@ -187,12 +251,13 @@ function elro.cmd_mobs(arg)
     local n = 0
     for id in pairs(elro.cs_all_rooms()) do
       local t, keep = B.list(id), {}
-      for _, m in ipairs(t) do if m[1]:lower() ~= ign then keep[#keep + 1] = m end end
+      for _, m in ipairs(t) do if not B.is_ignored(m[1]) then keep[#keep + 1] = m end end
       if #keep < #t then store(id, keep) ; n = n + 1 end
     end
     B.idx = nil
     if type(saveMap) == "function" then pcall(saveMap) end
-    say(string.format("'%s' is never noted, and was taken out of %d room(s). 'mapmobs unignore %s' undoes it.", ign, n, ign))
+    say(string.format("'%s' is never noted, and was taken out of %d room(s). 'mapmobs unignore %s' undoes it.%s",
+      ign, n, ign, ign:find("*", 1, true) and "" or " A '*' in the name stands for any text."))
     return
   end
   local uni = arg:match("^unignore%s+(.+)$")

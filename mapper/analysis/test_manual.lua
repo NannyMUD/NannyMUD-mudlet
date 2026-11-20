@@ -45,7 +45,7 @@ local function fresh()
   for k in pairs(UD) do UD[k] = nil end
   for k in pairs(SPX) do SPX[k] = nil end
   M.data, M.areas, M.learn, M.last, M.belief, M.here, M.view, M.q = {}, nil, nil, nil, nil, nil, nil, {}
-  M.res, M.blk, M.names, M.twoway = {}, {}, nil, nil
+  M.res, M.blk, M.names, M.twoway, M.xml, M.shortText = {}, {}, nil, nil, nil, nil
   elro.smap = {}
   elro.offmap = 0
 end
@@ -163,8 +163,8 @@ end
 do
   fresh()
   elro.cmd_manual("on warp")
-  local P = room("A pale room.", "east.")
-  local Q = room("A quiet room.", "east.")
+  local P = room("A pale room.", "east and west.")
+  local Q = room("A quiet room.", "east and west.")
   step("look", P)
   step("east", Q)
   step("east", P)                            -- the maze warps back to the pale room
@@ -182,6 +182,21 @@ do
   elro.cmd_manual("off") ; elro.cmd_manual("on warp")
   step("look", P)
   eq(rooms_of("warp"), 2, "the pair is kept with the map")
+end
+
+-- a dive west into a pool with no way back drops a level the grid cannot see; the walk back
+-- up and east still comes home to the hill, not to a copy of it one level up
+do
+  fresh()
+  elro.cmd_manual("on dive")
+  local H = room("A hill.", "east and west.")
+  local L = room("A pool.", "up.")
+  local W = room("Wet ground.", "down and east.")
+  step("look", H)
+  step("west", L)
+  step("up", W)
+  step("east", H)
+  eq(rooms_of("dive"), 3, "a step into a room with no way back is no move on the grid")
 end
 
 -- 'same' refuses rooms whose ways differ: their own walks prove them two rooms
@@ -317,6 +332,18 @@ do
   step("meta-north", room("A small cyan room.", "west, south, meta-south and meta-down."))
   eq(M.xml, nil, "a room without tags: plain mode again")
   eq(rooms_of("tagged"), 2, "and still the same rooms")
+  -- the tag reader cut the line before us: it names the room it cut, and chatter stays chatter
+  M.xml = true
+  local seen = #M.data.tagged.nodes
+  M.sent("meta-north")
+  NannyXml.listeners.manual("prompt", "> ")
+  M.line("> Bob grins widely.")
+  NannyXml.listeners.manual("short", "A small cyan room")
+  M.line("A small cyan room.")
+  M.line("  There are four obvious exits: west, south, meta-south and meta-down.")
+  M.prompt()
+  eq(#M.data.tagged.nodes, seen + 1, "cut first by the tag reader: the name it cut is still read")
+  eq(rooms_of("tagged"), 2, "...and it is the same room")
 end
 
 -- the tags cut from the screen: where each one is, counted from 0
@@ -406,6 +433,113 @@ do
   step("west", { "Somewhere mapped." })
   eq(M.view, nil, "back on the map")
   eq(M.last, nil, "the walk is broken there")
+end
+
+-- gates: while learning, a lone step in from a mapped room and out to one joins the area to
+-- the map; with learning off they are only followed
+do
+  fresh()
+  local G, H = 501, 502                      -- two of the game's mapped rooms
+  addRoom(G) ; addRoom(H)
+  setExit(G, elro.off_room(), "west")        -- as the game's map marks a way into ground it cannot map
+  local GR, HR = room("A road.", "west."), room("A meadow.", "west.")
+  local P, Q = room("A dark hall.", "east and west."), room("A dim hall.", "east and west.")
+  -- move from mapped room `at` (nil: from off the map) to a room `lines`, landing on `to`
+  local function go(cmd, lines, at, to)
+    elro.offmap = (at == nil) and 0 or nil
+    elro.current = at or elro.current
+    M.sent(cmd)
+    elro.offmap = (to == nil) and 0 or nil
+    if to then elro.current = to end
+    for _, l in ipairs(lines) do M.line(l) end
+    M.prompt()
+  end
+  elro.cmd_manual("on gated")
+  -- the walk as code from before gates left it in memory, across an update
+  M.data.gated = { area = "gated", keys = {}, kidx = {}, nodes = {} }
+  go("west", P, G)
+  go("west", Q)
+  go("west", HR, nil, H)
+  local S = M.data.gated.S
+  local p, q = S.id[S.find(1)], S.id[S.find(2)]
+  eq(getRoomExits(G).west, p, "in: the mapped room's way leads into the area")
+  eq(getRoomExits(q).west, H, "out: the area's way leads to the mapped room")
+  eq(#M.data.gated.gin + #M.data.gated.gout, 2, "one gate each way")
+  -- typed ahead: which room the move left is not sure, so no gate
+  go("east", P, H)
+  local before = #M.data.gated.gout
+  elro.offmap = 0 ; M.sent("east") ; M.sent("east")
+  elro.offmap = nil ; elro.current = G
+  for _, l in ipairs(Q) do M.line(l) end
+  for _, l in ipairs(GR) do M.line(l) end
+  M.prompt()
+  eq(#M.data.gated.gout, before, "two moves typed ahead: no gate out")
+  -- kept with the walk
+  local kept = 0
+  for _ in UD["elro.manual:gated"]:gmatch("\nO\t") do kept = kept + 1 end
+  eq(kept, before, "gates are kept with the walk")
+  -- learning off: in through the gate, the room is known at once, and nothing is added
+  elro.cmd_manual("off")
+  M.data = {}
+  go("west", P, G)
+  eq(M.view_room(), p, "learning off: in by a known gate, the room is known")
+  eq(elro.here_room(), p, "...and a walk or a mark starts there, not off the map")
+  local n = #M.data.gated.nodes
+  go("west", Q) ; go("west", HR, nil, H)
+  eq(#M.data.gated.nodes + #M.data.gated.gout, n + before, "learning off: nothing added")
+  elro.offmap = 0
+end
+
+-- a plain of rooms that all look alike: a fresh way in is placed by nothing, so it is a room
+-- of its own until a way it leads agrees with a known one; then its piece joins, and every
+-- look-alike that lands on a known place with it is that room
+do
+  fresh()
+  local G1, G2, G3 = 701, 702, 703
+  addRoom(G1) ; addRoom(G2) ; addRoom(G3)
+  local P = room("A plain.", "north, south, east and west.")
+  local GR = room("A gate.", "south.")
+  local function go(cmd, lines, at, to)
+    elro.offmap = (at == nil) and 0 or nil
+    elro.current = at or elro.current
+    M.sent(cmd)
+    elro.offmap = (to == nil) and 0 or nil
+    if to then elro.current = to end
+    for _, l in ipairs(lines) do M.line(l) end
+    M.prompt()
+  end
+  elro.cmd_manual("on plain")
+  go("south", P, G1)                         -- (0,0)
+  go("east", P)                              -- (1,0)
+  go("north", GR, nil, G3)                   -- (1,0) north leads to G3
+  go("south", P, G2)                         -- in somewhere else: where, nothing says
+  eq(rooms_of("plain"), 3, "a fresh way in among look-alikes is a room of its own")
+  go("east", P)
+  go("north", GR, nil, G3)                   -- ...until its east room leads north to G3 too
+  eq(rooms_of("plain"), 2, "a way to the same mapped room places it: the two rooms are the first two")
+  elro.offmap = 0
+end
+
+-- a name the game's map already has: refused, since its layout would take our rooms in; an
+-- area learned that way before keeps working, and a wipe takes only the learned rooms
+do
+  fresh()
+  local aid = elro.areaId("town")
+  addRoom(601) ; setRoomArea(601, aid) ; elro.cs_lists_dirty() ; elro.cs_dirty(601, aid)
+  elro.cmd_manual("on town")
+  eq(M.learn, nil, "the game's area name is refused")
+  M.areas = { "town" }                       -- learned under that name by an older version
+  elro.cmd_manual("on town")
+  eq(M.learn, "town", "an area learned before still learns")
+  step("look", room("A back alley.", "north."))
+  eq(rooms_of("town"), 1, "a learned room in the game's area")
+  -- Mudlet's deleteArea takes every room in the area with it
+  local real = deleteArea
+  deleteArea = function(a) for _, id in ipairs(getAreaRooms(a)) do deleteRoom(id) end real(a) end
+  elro.cmd_manual("wipe town confirm")
+  deleteArea = real
+  eq(roomExists(601), true, "wipe: the game's room stays")
+  eq(rooms_of("town"), 0, "...and the learned one goes")
 end
 
 print(string.format("test_manual: %d check(s), %d failure(s)", ntest, fail))

@@ -2072,6 +2072,13 @@ function elro.frontier_room()
   return id
 end
 
+-- Where the player stands, for a walk or a mark: the mapped room, or off the map the room
+-- mapmanual places them in; nil off the map anywhere else.
+function elro.here_room()
+  if not elro.offmap then return elro.current end
+  return elro.manual and elro.manual.view_room and elro.manual.view_room() or nil
+end
+
 -- The room the VIEW follows: a coin maze room while in one, the placeholder while off the
 -- map, else the player's.
 function elro.view_room()
@@ -5911,7 +5918,8 @@ function elro.cmd_mark(arg)
   if not elro.current or not roomExists(elro.current) then
     cecho("\n<red>[elro]: current room unknown; move once first.\n<reset>") return
   end
-  if elro.offmap then
+  local here = elro.here_room()
+  if not here then
     cecho("\n<red>[elro]: you are off the map; a mark needs a mapped room.\n<reset>") return
   end
   local name = mark_name(arg)
@@ -5922,20 +5930,20 @@ function elro.cmd_mark(arg)
     cecho("\n<red>[elro]: '" .. name .. "' is a word the game needs; pick another.\n<reset>") return
   end
   local old = elro.mark_find(name)
-  if old and old ~= elro.current then mark_drop(old, name) end
-  if not mark_has(elro.current, name) then
-    local t = mark_list(elro.current) ; t[#t + 1] = name
-    setRoomUserData(elro.current, MARK, table.concat(t, " "))
+  if old and old ~= here then mark_drop(old, name) end
+  if not mark_has(here, name) then
+    local t = mark_list(here) ; t[#t + 1] = name
+    setRoomUserData(here, MARK, table.concat(t, " "))
   end
   mark_save(name)
   if name == "here" then
     cecho(string.format("\n<green>[elro]: 'here' is now %s (%d). 'mapreturn' walks back.\n<reset>",
-          getRoomName(elro.current) or "this room", elro.current))
+          getRoomName(here) or "this room", here))
   else
     elro.mark_alias(name, true)
     cecho(string.format("\n<green>[elro]: '%s' is now %s (%d). Typing '%s' walks there; "
           .. "'mapunmark %s' gives the word back to the game.\n<reset>",
-          name, getRoomName(elro.current) or "this room", elro.current, name, name))
+          name, getRoomName(here) or "this room", here, name, name))
   end
 end
 function elro.cmd_return(arg)
@@ -5945,7 +5953,7 @@ function elro.cmd_return(arg)
     cecho("\n<red>[elro]: no mark called '" .. name .. "'. 'mapmark" .. (name == "here" and "" or (" " .. name))
           .. "' sets it where you stand; 'mapmarks' lists them.\n<reset>") return
   end
-  if id == (elro.walk_busy() and elro.walkTarget or elro.current) then
+  if id == (elro.walk_busy() and elro.walkTarget or elro.here_room()) then
     cecho("\n<green>[elro]: you are at '" .. name .. "'.\n<reset>") return
   end
   elro.gotoRoom(id)
@@ -6578,15 +6586,17 @@ function elro.gotoRoom(target)
   if not elro.current then
     cecho("\n<red>[elro]: current room unknown; move once first.\n<reset>") return
   end
-  -- off the map the last mapped room is not where we are: no path starts here
-  if elro.offmap then
+  -- off the map the last mapped room is not where we are: no path starts there, but one
+  -- starts in the learned room mapmanual places us in
+  local here = elro.here_room()
+  if not here then
     cecho("\n<red>[elro]: you are off the map; walk back onto it first.\n<reset>") return
   end
   -- a walk asked for while one is running is planned from that one's end, so
   -- that it can go out at once and keep its place in the order typed
   -- ('mapmark here;shop;sell;mapreturn' on one line). The end is the plan's,
   -- not a position: position is only ever what the !NMP lines said.
-  local from = elro.walk_busy() and elro.walkTarget or elro.current
+  local from = elro.walk_busy() and elro.walkTarget or here
   if from == target then return end
   if getPath(from, target) then
 

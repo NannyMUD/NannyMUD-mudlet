@@ -5,8 +5,8 @@
 elro = elro or {}
 elro.CHANGES = {
   { version = "next", items = {
-    { "mapmanual (experimental) maps an area the game sends no map for, from what its rooms show, taking it to be a grid; mapmanual same joins two rooms a warp makes look apart.", "maphelp mapmanual" },
-    { "mapmobs notes the monsters each room shows in the game's xml mode, and tells wanderers from rare spawns.", "maphelp mapmobs" },
+    { "mapmanual (experimental) maps an area the game sends no map for, from what its rooms show, taking it to be a grid except where an exit has no way back (a dive, a fall), and joins it to the game's map where you walk in and out while learning, so speedwalks go through; mapmanual same joins two rooms a warp makes look apart.", "maphelp mapmanual" },
+    { "mapmobs notes the monsters each room shows in the game's xml mode, and tells wanderers from rare spawns; players' pets are left out by themselves.", "maphelp mapmobs" },
     { "mapnotes looks in one area with 'in <area>', and at monsters or your own notes alone with 'mobs' or 'notes'.", "maphelp mapnotes" },
     { "Clicking a room names the areas its exits lead to; mapflags puts that name at each blue arrow.", "maphelp mapflags" },
     { "A room's letter turns light blue while it has an unwalked up, down or named exit.", "maphelp mapglyphs" },

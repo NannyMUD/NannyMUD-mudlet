@@ -28,6 +28,13 @@ local WALL = 0                              -- an edge target: the move went now
 
 local function say(s) cecho("\n<cyan>[elro]: " .. s .. "<reset>\n") end
 local function echo(s) cecho("\n<grey>[manual] " .. s .. "<reset>\n") end
+-- 'mapmanual trace': what each move, room and prompt was taken as; raw text, so no cecho
+local function tr(fmt, ...)
+  if not M.trace then return end
+  local ok, s = pcall(string.format, fmt, ...)
+  if type(cecho) == "function" then cecho("\n<dark_orange>[trace]<reset> ") end
+  if type(_G.echo) == "function" then _G.echo((ok and s or fmt) .. "\n") end
+end
 local function trim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end
 
 -- ---- reading a room ----
@@ -91,22 +98,37 @@ local function drop(D, gone)
     if map[p[1]] and map[p[2]] then same[#same + 1] = { map[p[1]], map[p[2]] } end
   end
   D.same = same
+  -- so do the gates
+  for _, list in ipairs({ "gin", "gout" }) do
+    local keep = {}
+    for _, gt in ipairs(D[list] or {}) do
+      if map[gt.node] then gt.node = map[gt.node] ; keep[#keep + 1] = gt end
+    end
+    D[list] = keep
+  end
   D.S = nil
 end
 
 local function load(area)
   local D = M.data[area]
-  if D then return D end
-  D = { area = area, keys = {}, kidx = {}, nodes = {}, same = {} }
+  -- a walk loaded before an update may lack what the new code keeps
+  if D then D.same, D.gin, D.gout = D.same or {}, D.gin or {}, D.gout or {} return D end
+  D = { area = area, keys = {}, kidx = {}, nodes = {}, same = {}, gin = {}, gout = {} }
   local ok, s = pcall(getMapUserData, "elro.manual:" .. area)
   if ok and type(s) == "string" then
     for line in s:gmatch("[^\n]+") do
       local k = line:match("^K\t(.*)$")
       local sa, sb = line:match("^S\t(%d+)\t(%d+)$")
+      local ia, id_, ib = line:match("^I\t(%d+)\t([^\t]+)\t(%d+)$")
+      local oa, od, ob = line:match("^O\t(%d+)\t([^\t]+)\t(%d+)$")
       if k then
         D.keys[#D.keys + 1] = k ; D.kidx[k] = #D.keys
       elseif sa then
         D.same[#D.same + 1] = { tonumber(sa), tonumber(sb) }
+      elseif ia then
+        D.gin[#D.gin + 1] = { from = tonumber(ia), d = id_, node = tonumber(ib) }
+      elseif oa then
+        D.gout[#D.gout + 1] = { node = tonumber(oa), d = od, to = tonumber(ob) }
       else
         local ki, d, w, id, st = line:match("^N\t(%d+)\t(%S+)\t(%S+)\t(%S+)\t(%S+)$")
         if ki then
@@ -141,6 +163,8 @@ local function save(D)
       #w > 0 and table.concat(w, ",") or "-", n.id and tostring(n.id) or "-", n.s and "s" or "-")
   end
   for _, p in ipairs(D.same or {}) do L[#L + 1] = "S\t" .. p[1] .. "\t" .. p[2] end
+  for _, gt in ipairs(D.gin or {}) do L[#L + 1] = "I\t" .. gt.from .. "\t" .. gt.d .. "\t" .. gt.node end
+  for _, gt in ipairs(D.gout or {}) do L[#L + 1] = "O\t" .. gt.node .. "\t" .. gt.d .. "\t" .. gt.to end
   pcall(setMapUserData, "elro.manual:" .. D.area, table.concat(L, "\n"))
 end
 
@@ -198,6 +222,10 @@ function M.solve(D)
     if n.d and listed[n.k][n.d] and D.nodes[g + 1] and not D.nodes[g + 1].s then e[n.d] = g + 1 end
     E[g] = e
   end
+  -- a way out to a mapped room: a fixed target, its room id negated (rooms seen are 1..N)
+  for _, gt in ipairs(D.gout or {}) do
+    if E[gt.node] and listed[key[gt.node]][gt.d] then E[gt.node][gt.d] = -gt.to end
+  end
   local function find(x) while par[x] ~= x do x = par[x] end return x end
   local log = {}
   local function set(t, k, v) log[#log + 1] = { t, k, t[k] } ; t[k] = v end
@@ -220,50 +248,110 @@ function M.solve(D)
     set(gpar, rb, ra) ; set(goff, rb, vadd(want, ob, -1))
     return true
   end
-  -- the walk itself: each step a fixed move, so one walk never contradicts itself
+  -- the walk itself: each step a fixed move, so one walk never contradicts itself. A step into
+  -- a room with no way back (a dive, a fall) is no move: such exits bend.
   for g = 1, N do
-    local t = E[g] and E[g][D.nodes[g].d or ""]
-    local v = t and t ~= WALL and M.delta(D.nodes[g].d)
+    local d = D.nodes[g].d or ""
+    local t = E[g] and E[g][d]
+    local v = t and t > 0 and listed[key[t]][M.reverse(d) or ""] and M.delta(d)
     if v then gunion(g, t, v) end
   end
-  -- Join a and b and everything that forces. Returns whether it holds and how many ways
-  -- agreed; the log keeps the change until the caller commits or undoes it from `mark`.
-  -- `free`: the player said so, the grid is not asked.
+  local function place(o)
+    local p = {}
+    for ax, n in pairs(o) do if n ~= 0 then p[#p + 1] = ax .. "=" .. n end end
+    table.sort(p)
+    return table.concat(p, ",")
+  end
+  -- Two pieces of grid about to be joined with x and y at one place: one place is one room, so
+  -- look-alikes both have at another place are one room too. Returns those pairs. A place
+  -- where they look different is passed over: a misread line or a bent way can cause it.
+  local function overlap(x, y)
+    local rx, ox = gfind(x)
+    local ry, oy = gfind(y)
+    local shift = vadd(ox, oy, -1)
+    local at, pairs_ = {}, {}
+    for g = 1, N do
+      local r, o = gfind(g)
+      if r == rx then
+        local p = place(o)
+        at[p] = at[p] or g
+      end
+    end
+    for g = 1, N do
+      local r, o = gfind(g)
+      if r == ry then
+        local a = at[place(vadd(o, shift, 1))]
+        if a and find(a) ~= find(g) and key[a] == key[g] then pairs_[#pairs_ + 1] = { a, g } end
+      end
+    end
+    return pairs_
+  end
+  -- Join a and b and everything that forces. Returns whether it holds, how many ways agreed,
+  -- and how many of those are anchors: a wall or a mapped room both lead to, or another place
+  -- where two pieces of grid joined here overlap. The log keeps the change until the caller
+  -- commits or undoes it from `mark`. `free`: the player said so, the grid is not asked.
   local function merge(a, b, free)
-    local mark, score = #log, 0
+    local mark, score, anchor = #log, 0, 0
     local work = { a, b }
     while #work > 0 do
       local y = table.remove(work) ; local x = table.remove(work)
       x, y = find(x), find(y)
       if x ~= y then
-        if key[x] ~= key[y] then return undo(mark), 0 end
-        if not free and not gunion(x, y, {}) then return undo(mark), 0 end
+        if key[x] ~= key[y] then return undo(mark), 0, 0 end
+        if not free then
+          if gfind(x) ~= gfind(y) then
+            for _, p in ipairs(overlap(x, y)) do
+              if not (find(p[1]) == x and find(p[2]) == y) then
+                work[#work + 1] = p[1] ; work[#work + 1] = p[2] ; anchor = anchor + 1
+              end
+            end
+          end
+          if not gunion(x, y, {}) then return undo(mark), 0, 0 end
+        end
         if y < x then x, y = y, x end
         set(par, y, x)
         for d, t in pairs(E[y]) do
           local s = E[x][d]
           if s == nil then set(E[x], d, t)
-          elseif s == WALL or t == WALL then
-            if s ~= t then return undo(mark), 0 end
-            score = score + 1
+          elseif s <= 0 or t <= 0 then                -- a wall or a mapped room: must be the same
+            if s ~= t then return undo(mark), 0, 0 end
+            score, anchor = score + 1, anchor + 1
           else work[#work + 1] = s ; work[#work + 1] = t ; score = score + 1 end
         end
       end
     end
-    return true, score
+    return true, score, anchor
   end
   local function commit() for i = #log, 1, -1 do log[i] = nil end end
+  -- the sightings the player declared one room, as groups
+  local spar = {}
+  local function sroot(x) while spar[x] and spar[x] ~= x do x = spar[x] end return x end
+  for _, p in ipairs(D.same or {}) do
+    local a, b = sroot(p[1]), sroot(p[2])
+    if a ~= b then spar[b] = a end
+  end
   local reds, byKey = {}, {}
   for g = 1, N do
     if find(g) == g then
-      -- every room it could be, tried and undone; the best agreeing one, the earliest of equals
-      local best, bestScore
-      for _, r in ipairs(byKey[key[g]] or {}) do
+      -- every room it could be, tried and undone; the best agreeing one, the earliest of equals.
+      -- A look-alike in another piece of grid (a fresh start) is placed by nothing: it joins
+      -- only on an anchor. A room only one room looks like joins on its looks.
+      local best, bestAnchor, bestScore
+      local cands = byKey[key[g]] or {}
+      local looks = {}                            -- rooms declared one ('same') count once
+      for _, r in ipairs(cands) do looks[sroot(r)] = true end
+      local alike = 0
+      for _ in pairs(looks) do alike = alike + 1 end
+      for _, r in ipairs(cands) do
+        local apart = gfind(r) ~= gfind(g)
         local mark = #log
-        local ok, sc = merge(r, g)
+        local ok, sc, an = merge(r, g)
         if ok then
           undo(mark)
-          if not best or sc > bestScore then best, bestScore = r, sc end
+          if not (apart and alike > 1 and an == 0)
+             and (not best or an > bestAnchor or (an == bestAnchor and sc > bestScore)) then
+            best, bestAnchor, bestScore = r, an, sc
+          end
         end
       end
       if best then
@@ -272,6 +360,18 @@ function M.solve(D)
         reds[#reds + 1] = g
         byKey[key[g]] = byKey[key[g]] or {}
         table.insert(byKey[key[g]], g)
+      end
+    end
+  end
+  -- rooms entered from one mapped room by one way are one room
+  local entered = {}
+  for _, gt in ipairs(D.gin or {}) do
+    if gt.node <= N then
+      local k = gt.from .. "\t" .. gt.d
+      if entered[k] then
+        if find(entered[k]) ~= find(gt.node) and merge(entered[k], gt.node) then commit() end
+      else
+        entered[k] = gt.node
       end
     end
   end
@@ -290,10 +390,10 @@ function M.solve(D)
     for _, r in ipairs(list) do if find(r) == r then keep[#keep + 1] = r end end
     byKey[k] = keep
   end
-  -- a class's way: WALL, or the class it leads to
+  -- a class's way: WALL, a mapped room (negated), or the class it leads to
   local function way(r, d)
     local t = E[r][d]
-    if t == nil or t == WALL then return t end
+    if t == nil or t <= 0 then return t end
     return find(t)
   end
   -- two-way: a walked way back is assumed where the room lists it and nothing is known there.
@@ -303,7 +403,7 @@ function M.solve(D)
     local claim = {}
     for _, r in ipairs(reds) do
       for d, t in pairs(E[r]) do
-        local rv = t ~= WALL and M.reverse(d)
+        local rv = t > 0 and M.reverse(d)
         local c = rv and find(t)
         if c and listed[key[c]][rv] and E[c][rv] == nil then
           local k = c .. "\t" .. rv
@@ -462,8 +562,9 @@ local function sync(D, S)
     for d in pairs(S.A[r] or {}) do ways[d] = true end
     for d in pairs(ways) do
       local t = S.way2(r, d)
-      if t and t ~= WALL then
-        if elro.dirNum[d] then want[d] = S.id[t] else wantS[d] = S.id[t] end
+      local to = t and (t > 0 and S.id[t] or t < 0 and roomExists(-t) and -t) or nil
+      if to then
+        if elro.dirNum[d] then want[d] = to else wantS[d] = to end
       end
     end
     local named = {}
@@ -503,6 +604,42 @@ local function sync(D, S)
       end
     end
     elro.cs_dirty(id, aid)
+  end
+  -- the way in from a mapped room, into a slot that is empty, unexplored, off the map or ours
+  for _, gt in ipairs(D.gin or {}) do
+    local id, from = S.id[S.find(gt.node)], gt.from
+    if id and roomExists(from) and not is_ours(from, D.area) then
+      if elro.dirNum[gt.d] then
+        local cur = (getRoomExits(from) or {})[gt.d]
+        if cur ~= id and not (cur == nil or cur == front or cur == elro.OFF_ROOM or is_ours(cur, D.area)) then
+          tr("way in from %d by %s not written: the map has it leading to %s", from, gt.d, tostring(cur))
+        end
+        if cur ~= id and (cur == nil or cur == front or cur == elro.OFF_ROOM or is_ours(cur, D.area)) then
+          tr("way in: %d %s now leads to %d", from, gt.d, id)
+          setExit(from, id, gt.d)
+          if elro.stub_apply then elro.stub_apply(from) end
+          elro.cs_dirty(from, getRoomArea(from))
+          changed = true
+        end
+      else
+        local had
+        for k, cmd in pairs(elro.smap) do
+          local a, b = k:match("^(%d+):(%d+)$")
+          if tonumber(a) == from and cmd == gt.d then
+            if tonumber(b) == id then had = true
+            elseif is_ours(tonumber(b), D.area) then
+              pcall(removeSpecialExit, from, cmd) ; elro.smap[k] = nil ; smapChanged = true
+            else had = true end                     -- a real special exit of the map's own wins
+          end
+        end
+        if not had then
+          elro.smap[from .. ":" .. id] = gt.d ; smapChanged = true
+          pcall(addSpecialExit, from, id, gt.d)
+          elro.cs_dirty(from, getRoomArea(from))
+          changed = true
+        end
+      end
+    end
   end
   -- rooms no class keeps
   for _, id in pairs(getAreaRooms(aid) or {}) do
@@ -583,14 +720,38 @@ local function seed(k)
   return out
 end
 
--- learning off: narrow down where you can be
-local function locate(k, d)
+-- where a way leads, in words: nowhere, a mapped room (negated), or a room of the walk
+local function led(S, t)
+  if t == WALL then return "nowhere" end
+  return "to room " .. tostring(t < 0 and -t or S.id[t])
+end
+
+-- the rooms known to be entered from mapped room `from` by `d`, with key k
+local function gated(from, d, k)
+  local out = {}
+  for _, area in ipairs(areas()) do
+    local D = load(area)
+    local S, seen = solution(D), {}
+    for _, gt in ipairs(D.gin or {}) do
+      local r = gt.node <= #D.nodes and S.find(gt.node)
+      if r and gt.from == from and gt.d == d and not seen[r] and D.keys[D.nodes[r].k] == k then
+        seen[r] = true ; out[#out + 1] = { D = D, r = r }
+      end
+    end
+  end
+  return out
+end
+
+-- learning off: narrow down where you can be. `from`: the mapped room the move left.
+local function locate(k, d, from)
   local B = {}
-  if M.belief and d then
+  if from then
+    B = gated(from, d, k)
+  elseif M.belief and d then
     for _, b in ipairs(M.belief) do
       local S = solution(b.D)
       local t = S.way2(b.r, d)
-      if t and t ~= WALL and b.D.keys[b.D.nodes[t].k] == k then B[#B + 1] = { D = b.D, r = t } end
+      if t and t > 0 and b.D.keys[b.D.nodes[t].k] == k then B[#B + 1] = { D = b.D, r = t } end
     end
   elseif M.belief then
     for _, b in ipairs(M.belief) do
@@ -615,10 +776,12 @@ local function locate(k, d)
   end
 end
 
--- learning on: one more room seen, reached by `d` from the last (nil: a fresh start)
-local function learn(k, d)
+-- learning on: one more room seen, reached by `d` from the last (nil: a fresh start), or by
+-- `d` from mapped room `from`
+local function learn(k, d, from)
   local D = load(M.learn)
   local S = solution(D)
+  if from then M.last = nil end
   -- a look at the room you are in adds nothing
   if not d and M.last and D.keys[D.nodes[M.last].k] == k then
     show(S.id[S.find(M.last)])
@@ -628,12 +791,11 @@ local function learn(k, d)
   if M.last and d then
     local c = S.find(M.last)
     local t = S.way(c, d)
-    local was = (t == WALL) and "nowhere" or (t and D.keys[D.nodes[t].k])
+    local was = t and t > 0 and D.keys[D.nodes[t].k]
     if t and was ~= k and support(D, S, c, d) >= SURE then
       -- more likely a misread line than a changed maze: skip the step, keep learning
       echo(string.format("%s from room %d led %s every time before; this step is not kept."
-        .. " If the area did change: 'mapmanual forget %d'.", d, S.id[c],
-        t == WALL and "nowhere" or ("to room " .. S.id[t]), S.id[c]))
+        .. " If the area did change: 'mapmanual forget %d'.", d, S.id[c], led(S, t), S.id[c]))
       lost()
       return
     end
@@ -648,6 +810,7 @@ local function learn(k, d)
   if M.last and d then D.nodes[M.last].d = d else n.s = true end
   D.nodes[#D.nodes + 1] = n
   local g = #D.nodes
+  if from and d then D.gin[#D.gin + 1] = { from = from, d = d, node = g } end
   S = rebuild(D)
   if not S then return end
   M.last = g
@@ -669,8 +832,8 @@ local function wall(d)
     local t = S.way(c, d)
     if t and t ~= WALL then
       if support(D, S, c, d) >= SURE then
-        echo(string.format("%s from room %d led to room %d every time before; this wall is not kept.",
-          d, S.id[c], S.id[t]))
+        echo(string.format("%s from room %d led %s every time before; this wall is not kept.",
+          d, S.id[c], led(S, t)))
         return
       end
     end
@@ -714,9 +877,14 @@ function M.sent(text)
     d = (exit_names()[c] or (M.here and M.here[c])) and c or nil
   end
   if d or LOOK[c] then
+    local alone = not M.q[1]
     -- what arrived before this was typed is not its answer: a room's name is read from here on
-    if not M.q[1] then M.blk = {} end
-    M.q[#M.q + 1] = { at = now, d = d }
+    if alone then M.blk = {} end
+    -- a lone move from a mapped room: it surely left that room (one typed ahead may not have)
+    local from = alone and d and not elro.offmap and elro.current or nil
+    M.q[#M.q + 1] = { at = now, d = d, alone = alone, from = from }
+    tr("sent '%s': way %s, alone %s, from mapped room %s (off the map: %s)", c, tostring(d),
+       tostring(alone), tostring(from), tostring(elro.offmap))
   end
 end
 
@@ -738,15 +906,24 @@ function M.line(l)
     end
     return
   end
-  -- xml mode tags the name (<short>) and the exits; stripped, a line reads as in plain mode
+  -- xml mode tags the name (<short>) and the exits; stripped, a line reads as in plain mode.
+  -- The tag reader may have cut the line first: it tells us the name it cut (M.shortText).
   local short = (l or ""):find("<short>", 1, true) ~= nil
   l = (l or ""):gsub("</?[%a_]+[^<>]*>", ""):gsub("^>%s*", "")
+  if not short and M.shortText and M.shortText ~= "" and trim(l):sub(1, #M.shortText) == M.shortText then
+    short = true
+  end
+  M.shortText = nil
   if noise(l) then return end
   M.blk = M.blk or {}
   local B = M.blk
   local function done()
     if B.name then
       M.res[#M.res + 1] = { k = M.key(B.name, B.ex), ex = exit_list(B.ex), t = take() }
+      local t = M.res[#M.res].t
+      tr("room '%s', exits '%s', answers %s", B.name, B.ex or "", t and tostring(t.d) or "no move")
+    else
+      tr("exit line '%s' but no room name read (xml expected: %s)", B.ex or "", tostring(M.xml))
     end
     -- a room without <short> means xml mode is off again
     if not B.short then M.xml = nil end
@@ -776,6 +953,30 @@ function M.line(l)
   end
 end
 
+-- Learning, and a lone move from the last learned room showed a mapped room: that way leads
+-- there. Only one room shown and no other move waiting, so the two surely belong together.
+local function gate_out(res)
+  local r = res[1]
+  if #res ~= 1 or M.q[1] or not r.k or not r.t or not r.t.alone or r.t.from or not r.t.d then
+    tr("no way out kept: %d room(s) shown, move waiting %s, lone move %s", #res, tostring(M.q[1] ~= nil),
+       tostring(r and r.t and r.t.alone))
+    return
+  end
+  local d, to = r.t.d, elro.current
+  if not (M.here and M.here[d]) or not to or not roomExists(to) then
+    tr("no way out kept: '%s' listed %s, mapped room %s", d, tostring(M.here and M.here[d]), tostring(to))
+    return
+  end
+  tr("way out: %s leads to mapped room %d", d, to)
+  local D = load(M.learn)
+  local n = D.nodes[M.last]
+  if not n then return end
+  for _, gt in ipairs(D.gout) do if gt.node == M.last and gt.d == d and gt.to == to then return end end
+  n.d = d
+  D.gout[#D.gout + 1] = { node = M.last, d = d, to = to }
+  rebuild(D)
+end
+
 function M.prompt()
   -- lost at the prompt, not on the line: lost() may move the view, which waits for a whole room
   if M.unasked then M.unasked = nil ; lost() end
@@ -783,16 +984,23 @@ function M.prompt()
   if not (M.blk and M.blk.exOpen) then M.blk = {} end
   local res = M.res
   M.res = {}
+  if #res > 0 or M.q[1] then
+    tr("prompt: %d room(s) read, off the map %s, learning %s, last seen %s, current %s", #res,
+       tostring(elro.offmap), tostring(M.learn), tostring(M.last), tostring(elro.current))
+  end
+  if not elro.offmap and M.learn and M.last then gate_out(res) end
   if not elro.offmap and (M.last or M.belief) then lost() end
   for _, r in ipairs(res) do
     if not elro.offmap then
       if M.last or M.belief then lost() end
     elseif r.k then
       local d = r.t and r.t.d
-      if d and not (M.here and M.here[d]) then d = nil end
+      -- in from a mapped room: the step is a way in; otherwise a way the last room lists
+      local from = r.t and r.t.from
+      if not from and d and not (M.here and M.here[d]) then d = nil end
       M.here = {}
       for _, x in ipairs(r.ex) do M.here[x] = true end
-      if M.learn then learn(r.k, d) else locate(r.k, d) end
+      if M.learn then learn(r.k, d, from) else locate(r.k, d, from) end
     elseif r.wall then
       wall(r.wall)
     end
@@ -804,11 +1012,15 @@ local function kill_hooks()
     if M[h] then pcall(killTrigger, M[h]) ; M[h] = nil end
   end
   if M.sendH then pcall(killAnonymousEventHandler, M.sendH) ; M.sendH = nil end
+  if NannyXml and NannyXml.listen then NannyXml.listen("manual", nil) end
 end
 
 local function hooks()
   kill_hooks()
   M.q, M.res, M.blk = {}, {}, {}
+  if NannyXml and NannyXml.listen then
+    NannyXml.listen("manual", function(class, text) if class == "short" then M.shortText = trim(text) end end)
+  end
   M.lineT = tempRegexTrigger("^", function() M.line(line) end)
   M.promptT = tempPromptTrigger(function() M.prompt() end)
   M.sendH = registerAnonymousEventHandler("sysDataSendRequest", function(_, text) M.sent(text) end)
@@ -870,7 +1082,10 @@ local function wipe(area)
   M.data[area], M.names = nil, nil
   for i, a in ipairs(areas()) do if a == area then table.remove(M.areas, i) ; break end end
   save_areas()
-  if aid and n > 0 and type(deleteArea) == "function" then pcall(deleteArea, aid) end
+  -- the map area only when nothing else is in it: the game's own rooms may share its name
+  if aid and n > 0 and type(deleteArea) == "function" and not next(getAreaRooms(aid) or {}) then
+    pcall(deleteArea, aid)
+  end
   elro.cs_reset() ; elro.cs_areas_dirty()
   if M.learn == area then set_learn(nil) end
   if D then lost() end
@@ -892,6 +1107,17 @@ function elro.cmd_manual(arg)
     if not name then say("name the area: 'mapmanual on <name>'. Its rooms go in a map area of that name.") return end
     local known = false
     for _, a in ipairs(areas()) do if a == name then known = true end end
+    -- a new name the game's map already has: its layout would place our rooms among its own
+    local aid = not known and elro.cs_areas()[name]
+    if aid then
+      for _, id in pairs(getAreaRooms(aid) or {}) do
+        if not is_ours(id, name) then
+          say(string.format("'%s' is an area of the game's map. Give the learned part a name of its own,"
+            .. " such as '%s vc': the ways in and out join the two.", name, name))
+          return
+        end
+      end
+    end
     if not known then table.insert(M.areas, name) ; save_areas() end
     load(name)
     set_learn(name)
@@ -899,9 +1125,14 @@ function elro.cmd_manual(arg)
     pcall(setMapUserData, "elro.manual.last", name)
     if type(saveMap) == "function" then pcall(saveMap) end
     M.last = nil
-    if not M.sendH then hooks() end
+    hooks()
     say("learning the area '" .. name .. "'. Every room you walk into is kept; 'mapmanual off' stops"
       .. " learning but still shows where you are. (Experimental.)")
+  elseif arg:match("^trace") then
+    local v = arg:match("^trace%s+(%a+)$")
+    M.trace = (v == "on") or (v == nil and not M.trace)
+    say(M.trace and "tracing: each move, room and prompt is shown as it is taken. 'mapmanual trace off' stops."
+        or "tracing off.")
   elseif arg == "off" then
     set_learn(nil)
     M.last = nil
@@ -1003,7 +1234,8 @@ function M.boot()
   if ok and type(s) == "string" and s ~= "" then
     for _, a in ipairs(areas()) do if a == s then M.learn = s end end
   end
-  if #areas() > 0 and not M.sendH and type(tempPromptTrigger) == "function" then hooks() end
+  -- always afresh: hooks kept from before an update would miss what the new code listens to
+  if #areas() > 0 and type(tempPromptTrigger) == "function" then hooks() end
 end
 
 if type(tempTimer) == "function" then tempTimer(2, function() M.boot() end) end
