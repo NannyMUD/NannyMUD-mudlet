@@ -222,13 +222,31 @@ if type(registerMapInfo) == "function" then
     if #s > 240 then s = s:sub(1, 237) .. "..." end
     return s, false, false, 230, 140, 140
   end)
-  if type(enableMapInfo) == "function" then pcall(enableMapInfo, INFO) end
+  -- shown unless 'mapmobs seen off' said otherwise, kept with the map
+  local ok, s = pcall(getMapUserData, "elro.mobs.seen")
+  if ok and s == "off" then
+    if type(disableMapInfo) == "function" then pcall(disableMapInfo, INFO) end
+  elseif type(enableMapInfo) == "function" then
+    pcall(enableMapInfo, INFO)
+  end
 end
 
 -- mapmobs [on|off|clear [#id]|ignore [name|here]|unignore <name|here>]
 function elro.cmd_mobs(arg)
   arg = (arg or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
   local function say(s) cecho("\n<green>[elro]: " .. s .. "\n<reset>") end
+  -- the "Seen:" line of a clicked room, apart from its notes
+  local seen = arg:match("^seen%s+(%a+)$")
+  if seen == "on" or seen == "off" then
+    pcall(setMapUserData, "elro.mobs.seen", seen)
+    local fn = seen == "on" and enableMapInfo or disableMapInfo
+    if type(fn) == "function" then pcall(fn, INFO) end
+    if type(saveMap) == "function" then pcall(saveMap) end
+    say(seen == "on" and "a clicked room shows the monsters seen in it again."
+        or "a clicked room no longer shows its monsters; notes still show. They are still noted:"
+          .. " 'mapnotes mobs' lists them.")
+    return
+  end
   -- a room where players gather: their pets and summons come and go, nothing there is the room's
   if arg == "ignore here" or arg == "unignore here" then
     local id = elro.here_room and elro.here_room() or elro.current

@@ -116,6 +116,20 @@ for _, m in ipairs(B.list(3)) do if m[1] == "Bram's undead attendant" then noted
 eq(noted, false, "...and not noted")
 eq(B.is_pet("Tom's cat"), false, "a name with an owner nobody saw as a player is a monster")
 
+-- the clicked room's "Seen:" line off, kept with the map; the notes' line is another
+local off, ud = {}, {}
+local realGet, realSet = getMapUserData, setMapUserData
+getMapUserData = function(k) return ud[k] or "" end
+setMapUserData = function(k, v) ud[k] = v end
+disableMapInfo = function(k) off[k] = true end
+enableMapInfo = function(k) off[k] = nil end
+elro.cmd_mobs("seen off")
+eq(off["Monsters seen"], true, "seen off: the monsters' line is hidden")
+eq(getMapUserData("elro.mobs.seen"), "off", "...and that is kept")
+elro.cmd_mobs("seen on")
+eq(off["Monsters seen"], nil, "seen on: shown again")
+getMapUserData, setMapUserData = realGet, realSet
+
 -- a room where players gather: nothing noted there
 elro.current, elro.offmap = 4, false
 elro.cmd_mobs("ignore here")
