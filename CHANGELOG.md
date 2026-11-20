@@ -4,12 +4,13 @@ What changed in each release of the mapper (ElrohirMapper) and NannyBasics. In t
 'maphelp news' and 'nanny news' show the same. Written by tools/changelog.lua from
 mapper/lua/changes.lua and basics/changes.lua: edit there.
 
-## Not released yet
+## 0.10.0 (2026-11-20)
 
 ### Mapper
 
 - mapmanual (experimental) maps an area the game sends no map for, from what its rooms show, taking it to be a grid except where an exit has no way back (a dive, a fall), and joins it to the game's map where you walk in and out while learning, so speedwalks go through; mapmanual same joins two rooms a warp makes look apart. (`maphelp mapmanual`)
-- mapmobs notes the monsters each room shows in the game's xml mode, and tells wanderers from rare spawns; players' pets are left out by themselves. (`maphelp mapmobs`)
+- mapmobs notes the monsters each room shows in the game's xml mode, and tells wanderers from rare spawns; players' pets are left out by themselves, 'mapmobs ignore' takes a '*' for any text and 'mapmobs ignore here' a whole room where players gather. (`maphelp mapmobs`)
+- mapmobs seen off keeps a clicked room's monsters out of its notes line, for when you want only your own notes there. (`maphelp mapmobs`)
 - mapnotes looks in one area with 'in <area>', and at monsters or your own notes alone with 'mobs' or 'notes'. (`maphelp mapnotes`)
 - Clicking a room names the areas its exits lead to; mapflags puts that name at each blue arrow. (`maphelp mapflags`)
 - A room's letter turns light blue while it has an unwalked up, down or named exit. (`maphelp mapglyphs`)
@@ -18,7 +19,10 @@ mapper/lua/changes.lua and basics/changes.lua: edit there.
 ### NannyBasics
 
 - The game's xml mode in your own colours: 'nanny xml on' switches it, your 'colour list' is read by itself. (`nanny help xml`)
-- Hits can be coloured by their damage tier, yours and those on you on two scales ('nanny xml hits on'), with the tier in front if you like ('nanny xml numbers on'). (`nanny help xml`)
+- Hits can be coloured by their damage tier, yours and those on you on two scales ('nanny xml hits on'), with the tier in front if you like ('nanny xml numbers on'); it turns the game's sound support on, since the tier comes from the sounds. (`nanny help xml`)
+- In xml mode your own triggers still match and their highlights win, chat lines lose their tags, and [dangerous] is red as the game paints it. (`nanny help xml`)
+- The tome bar no longer counts from a chant hours ago. (`nanny help tome`)
+- nanny update says what it is doing, or why it waits. (`nanny help update`)
 
 ## 0.9.1 (2026-11-12)
 

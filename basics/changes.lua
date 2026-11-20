@@ -4,9 +4,12 @@
 
 NannyBasics = NannyBasics or {}
 NannyBasics.CHANGES = {
-  { version = "next", items = {
+  { version = "0.10.0", date = "2026-11-20", items = {
     { "The game's xml mode in your own colours: 'nanny xml on' switches it, your 'colour list' is read by itself.", "nanny help xml" },
-    { "Hits can be coloured by their damage tier, yours and those on you on two scales ('nanny xml hits on'), with the tier in front if you like ('nanny xml numbers on').", "nanny help xml" },
+    { "Hits can be coloured by their damage tier, yours and those on you on two scales ('nanny xml hits on'), with the tier in front if you like ('nanny xml numbers on'); it turns the game's sound support on, since the tier comes from the sounds.", "nanny help xml" },
+    { "In xml mode your own triggers still match and their highlights win, chat lines lose their tags, and [dangerous] is red as the game paints it.", "nanny help xml" },
+    { "The tome bar no longer counts from a chant hours ago.", "nanny help tome" },
+    { "nanny update says what it is doing, or why it waits.", "nanny help update" },
   } },
   { version = "0.9.0", date = "2026-11-12", items = {
     { "nanny help is one lookup: an exact command shows it in full, any other word searches.", "nanny help" },
